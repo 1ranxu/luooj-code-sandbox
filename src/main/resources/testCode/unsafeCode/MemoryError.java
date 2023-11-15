@@ -6,8 +6,8 @@ import java.util.List;
  */
 public class Main {
     public static void main(String[] args) {
-        List<byte[]> bytesList =new ArrayList<>();
-        while (true){
+        List<byte[]> bytesList = new ArrayList<>();
+        while (true) {
             bytesList.add(new byte[1024]);
         }
     }

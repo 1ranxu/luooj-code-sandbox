@@ -21,7 +21,7 @@ public class MySecurityManager extends SecurityManager {
     @Override
     public void checkRead(String file) {
         System.out.println(file);
-        if (file.contains("hutool")){
+        if (file.contains("hutool")) {
             return;
         }
         throw new SecurityException("checkRead 权限不足，" + file);

@@ -7,8 +7,9 @@ public interface CodeSandBox {
 
     /**
      * 执行代码
+     *
      * @param executeCodeRequest
      * @return
      */
-    ExecuteCodeResponse executeCode(ExecuteCodeRequest executeCodeRequest) throws InterruptedException;
+    ExecuteCodeResponse executeCode(ExecuteCodeRequest executeCodeRequest);
 }

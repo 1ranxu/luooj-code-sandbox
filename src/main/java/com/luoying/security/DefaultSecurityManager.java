@@ -1,6 +1,7 @@
 package com.luoying.security;
 
 import java.security.Permission;
+
 /**
  * 默认安全管理器
  */

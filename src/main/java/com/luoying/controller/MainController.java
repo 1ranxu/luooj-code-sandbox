@@ -20,12 +20,6 @@ public class MainController {
     @Resource
     private JavaNativeCodeSandBox javaNativeCodeSandBox;
 
-
-    @GetMapping("/health")
-    public String healthCheck() {
-        return "ok";
-    }
-
     /**
      * 执行代码
      *

@@ -1,6 +1,6 @@
 server:
-  port: 5050
+  port: 8500
 
 spring:
   datasource:
-    password: 123456
+    password: 8500

@@ -13,15 +13,15 @@ import com.luoying.model.ExecuteCodeRequest;
 import com.luoying.model.ExecuteCodeResponse;
 import com.luoying.model.ExecuteMessage;
 import com.luoying.template.JavaCodeSandBoxTemplate;
-import jdk.nashorn.internal.ir.annotations.Reference;
 import org.springframework.stereotype.Component;
-import org.springframework.stereotype.Service;
 
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -33,6 +33,11 @@ public class JavaDockerCodeSandBox extends JavaCodeSandBoxTemplate {
     private static final long TIMEOUT = 5000L;
 
     private static final boolean FIRST_INIT = false;
+
+    private static final String IMAGE_NAME = "openjdk:8-alpine";
+    private static final String CONTAINER_NAME = "java_code_sandbox";
+    
+    
 
     @Override
     public ExecuteCodeResponse executeCode(ExecuteCodeRequest executeCodeRequest) {
@@ -51,10 +56,12 @@ public class JavaDockerCodeSandBox extends JavaCodeSandBoxTemplate {
         String userCodeParentPath = userCodeFile.getParentFile().getAbsolutePath();
         // 1.拉取镜像
         DockerClient dockerClient = DockerClientBuilder.getInstance().build();
-        String image = "openjdk:8-alpine";
-        if (FIRST_INIT) {
+        List<Image> images = dockerClient.listImagesCmd().exec();
+        // 判断要拉取的镜像是否已经存在
+        boolean isImageExists = images.stream().anyMatch(image -> Arrays.asList(image.getRepoTags()).contains(IMAGE_NAME));
+        if (!isImageExists) {
             // 拉取jdk镜像
-            PullImageCmd pullImageCmd = dockerClient.pullImageCmd(image);
+            PullImageCmd pullImageCmd = dockerClient.pullImageCmd(IMAGE_NAME);
             // 回调函数
             PullImageResultCallback pullImageResultCallback = new PullImageResultCallback() {
                 @Override
@@ -76,31 +83,46 @@ public class JavaDockerCodeSandBox extends JavaCodeSandBoxTemplate {
         }
 
         // 2.创建容器
-        CreateContainerCmd containerCmd = dockerClient.createContainerCmd(image);
-        HostConfig hostConfig = new HostConfig();
-        // 把本地存放字节码文件的目录映射到容器的内的/app目录
-        hostConfig.setBinds(new Bind(userCodeParentPath, new Volume("/app")));
-        // 限制最大内存
-        hostConfig.withMemory(100 * 1000 * 1000L);
-        // 不让内存往硬盘写
-        hostConfig.withMemorySwap(0L);
-        hostConfig.withCpuCount(1L);
+        // 判断容器是否存在
+        List<Container> containers = dockerClient.listContainersCmd().exec();
+        Optional<Container> containerOptional = containers.stream().filter(container -> Arrays.asList(container.getNames()).contains(CONTAINER_NAME)).findFirst();
+        String containerId;
+        if (containerOptional.isPresent()){
+            // 存在
+            Container container =containerOptional.get();
+            // 判断容器是否启动，未启动则手动启动
+            if(!"running".equals(container.getState())){
+                dockerClient.startContainerCmd(container.getId()).exec();
+            }
+            containerId = container.getId();
+        }else {
+            // 容器不存在，创建容器
+            CreateContainerCmd containerCmd = dockerClient.createContainerCmd(IMAGE_NAME).withName(CONTAINER_NAME);
+            HostConfig hostConfig = new HostConfig();
+            // 把本地存放字节码文件的目录映射到容器的内的/app目录
+            hostConfig.setBinds(new Bind(userCodeParentPath, new Volume("/app")));
+            // 限制最大内存
+            hostConfig.withMemory(100 * 1000 * 1000L);
+            // 不让内存往硬盘写
+            hostConfig.withMemorySwap(0L);
+            hostConfig.withCpuCount(1L);
 //        hostConfig.withSecurityOpts(Arrays.asList("seccomp=安全管理配置字符串"));
-        CreateContainerResponse createContainerResponse = containerCmd
-                .withReadonlyRootfs(true)
-                .withNetworkDisabled(true)
-                .withHostConfig(hostConfig)
-                .withAttachStdin(true)
-                .withAttachStdout(true)
-                .withAttachStderr(true)
-                .withTty(true)
-                .exec();
-        System.out.println(createContainerResponse);
-        String containerId = createContainerResponse.getId();
+            CreateContainerResponse createContainerResponse = containerCmd
+                    .withReadonlyRootfs(true)
+                    .withNetworkDisabled(true)
+                    .withHostConfig(hostConfig)
+                    .withAttachStdin(true)
+                    .withAttachStdout(true)
+                    .withAttachStderr(true)
+                    .withTty(true)
+                    .exec();
+            System.out.println(createContainerResponse);
+            containerId = createContainerResponse.getId();
+            // 3.启动容器
+            StartContainerCmd startContainerCmd = dockerClient.startContainerCmd(containerId);
+            startContainerCmd.exec();
+        }
 
-        // 3.启动容器
-        StartContainerCmd startContainerCmd = dockerClient.startContainerCmd(containerId);
-        startContainerCmd.exec();
         // docker exec focused_jackson java -cp /app Main 1 3
         // 4.执行命令并获取结果
         List<ExecuteMessage> executeMessageList = new ArrayList<>();

@@ -27,25 +27,31 @@ public abstract class JavaCodeSandBoxTemplate implements CodeSandBox {
 
     @Override
     public ExecuteCodeResponse executeCode(ExecuteCodeRequest executeCodeRequest) {
-        List<String> inputList = executeCodeRequest.getInputList();
-        String code = executeCodeRequest.getCode();
-        String language = executeCodeRequest.getLanguage();
-        // 1. 把用户的代码保存为文件
-        File userCodeFile = saveCodeFile(code);
+        File userCodeFile = null;
+        ExecuteCodeResponse executeCodeResponse = null;
+        try {
+            List<String> inputList = executeCodeRequest.getInputList();
+            String code = executeCodeRequest.getCode();
+            String language = executeCodeRequest.getLanguage();
+            // 1. 把用户的代码保存为文件
+            userCodeFile = saveCodeFile(code);
 
-        // 2. 编译代码，得到 class 文件
-        ExecuteMessage compileCodeFileExecuteMessage = compileCodeFile(userCodeFile);
-        System.out.println(compileCodeFileExecuteMessage);
+            // 2. 编译代码，得到 class 文件
+            ExecuteMessage compileCodeFileExecuteMessage = compileCodeFile(userCodeFile);
+            System.out.println(compileCodeFileExecuteMessage);
 
-        // 3. 执行代码，得到输出结果
-        List<ExecuteMessage> executeMessageList = runCodeFile(userCodeFile, inputList);
-        // 4. 收集整理输出结果
-        ExecuteCodeResponse executeCodeResponse = getOutputResponse(executeMessageList);
-
-        // 5. 文件清理，释放空间
-        boolean b = deleteFile(userCodeFile);
-        if (!b) {
-            log.error("deleteFile error userCodeFilePath={}", userCodeFile.getAbsolutePath());
+            // 3. 执行代码，得到输出结果
+            List<ExecuteMessage> executeMessageList = runCodeFile(userCodeFile, inputList);
+            // 4. 收集整理输出结果
+            executeCodeResponse = getOutputResponse(executeMessageList);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        } finally {
+            // 5. 文件清理，释放空间
+            boolean b = deleteFile(userCodeFile);
+            if (!b) {
+                log.error("deleteFile error userCodeFilePath={}", userCodeFile.getAbsolutePath());
+            }
         }
         return executeCodeResponse;
     }

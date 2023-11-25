@@ -1,4 +1,4 @@
-package com.luoying;
+package com.luoying.core;
 
 import com.luoying.model.ExecuteCodeRequest;
 import com.luoying.model.ExecuteCodeResponse;

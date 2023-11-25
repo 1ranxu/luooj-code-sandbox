@@ -1,8 +1,8 @@
-package com.luoying;
+package com.luoying.core.old;
 
 import com.luoying.model.ExecuteCodeRequest;
 import com.luoying.model.ExecuteCodeResponse;
-import com.luoying.template.JavaCodeSandBoxTemplate;
+import com.luoying.template.old.JavaCodeSandBoxTemplate;
 import org.springframework.stereotype.Component;
 
 /**

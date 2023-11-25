@@ -2,27 +2,50 @@ package com.luoying.template;
 
 import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.util.StrUtil;
-import com.luoying.CodeSandBox;
-import com.luoying.model.ExecuteCodeRequest;
-import com.luoying.model.ExecuteCodeResponse;
-import com.luoying.model.ExecuteMessage;
-import com.luoying.model.QuestionSubmitJudgeInfo;
-import com.luoying.utils.ProcessUtils;
+import com.luoying.core.CodeSandBox;
+import com.luoying.model.*;
+import com.luoying.utils.ProcessUtil;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.File;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * 代码沙箱模板
+ * 注意每个实现类必须自定义代码存放路径
+ */
 @Slf4j
-public abstract class JavaCodeSandBoxTemplate implements CodeSandBox {
-    private static final String GLOBAL_CODE_DIR_NAME = "tempCode";
-
-    private static final String GLOBAL_JAVA_CLASS_NAME = "Main.java";
-
+public abstract class CodeSandBoxTemplate implements CodeSandBox {
+    // 所有用户代码的根目录
+    String globalCodeDirPath;
+    // 对不同语言进行分类存储
+    String prefix;
+    // 代码文件名
+    String globalCodeFileName;
+    // 超时时间
     private static final long TIMEOUT = 5000L;
+
+    protected CodeSandBoxTemplate(String globalCodeDirPath, String prefix, String globalCodeFileName) {
+        this.globalCodeDirPath = globalCodeDirPath;
+        this.prefix = prefix;
+        this.globalCodeFileName = globalCodeFileName;
+    }
+
+
+    /**
+     * 每个实现类必须实现编译以及运行的cmd
+     *
+     * @param userCodeParentPath 用户代码父目录的绝对路径
+     * @param userCodePath       用户代码文件的绝对路径
+     * @return {@link CodeSandBoxCmd}
+     */
+    protected abstract CodeSandBoxCmd getCmd(String userCodeParentPath,
+                                             String userCodePath);
 
 
     @Override
@@ -32,16 +55,21 @@ public abstract class JavaCodeSandBoxTemplate implements CodeSandBox {
         try {
             List<String> inputList = executeCodeRequest.getInputList();
             String code = executeCodeRequest.getCode();
-            String language = executeCodeRequest.getLanguage();
             // 1. 把用户的代码保存为文件
-            userCodeFile = saveCodeFile(code);
+            userCodeFile = saveCodeToFile(code);
 
-            // 2. 编译代码，得到 class 文件
-            ExecuteMessage compileCodeFileExecuteMessage = compileCodeFile(userCodeFile);
+            String userCodePath = userCodeFile.getAbsolutePath();
+            String userCodeParentPath = userCodeFile.getParentFile().getAbsolutePath();
+
+            CodeSandBoxCmd sandBoxCmd = getCmd(userCodeParentPath, userCodePath);
+            String compileCmd = sandBoxCmd.getCompileCmd();
+            String runCmd = sandBoxCmd.getRunCmd();
+            // 2. 编译代码
+            ExecuteMessage compileCodeFileExecuteMessage = compileCode(compileCmd);
             System.out.println(compileCodeFileExecuteMessage);
 
             // 3. 执行代码，得到输出结果
-            List<ExecuteMessage> executeMessageList = runCodeFile(userCodeFile, inputList);
+            List<ExecuteMessage> executeMessageList = runCode(inputList, runCmd);
             // 4. 收集整理输出结果
             executeCodeResponse = getOutputResponse(executeMessageList);
         } catch (Exception e) {
@@ -58,79 +86,81 @@ public abstract class JavaCodeSandBoxTemplate implements CodeSandBox {
 
 
     /**
-     * 1. 把用户的代码保存为文件
+     * 1. 保存用户代码到文件中
+     * 保存到文件中的格式应为: tempCode/language/UUID/代码文件
      *
-     * @param code
+     * @param code 代码
      * @return
      */
-    public File saveCodeFile(String code) {
-
+    private File saveCodeToFile(String code) {
+        // 所有用户代码的根目录
         String userDir = System.getProperty("user.dir");
-        String globalCodePathName = userDir + File.separator + GLOBAL_CODE_DIR_NAME;
-        // 判断全局代码目录是否存在，没有则新建
-        if (!FileUtil.exist(globalCodePathName)) {
-            FileUtil.mkdir(globalCodePathName);
+        String globalCodePath = userDir + File.separator + globalCodeDirPath;
+        if (!FileUtil.exist(globalCodePath)) {
+            FileUtil.mkdir(globalCodePath);
         }
-        // 把用户的代码隔离存放
-        String userCodeParentPath = globalCodePathName + File.separator + UUID.randomUUID();
-        String userCodePath = userCodeParentPath + File.separator + GLOBAL_JAVA_CLASS_NAME;
-        File userCodeFile = FileUtil.writeString(code, userCodePath, StandardCharsets.UTF_8);
-        return userCodeFile;
+        // 存放用户代码的具体目录，通过prefix区分不同语言
+        String userCodeParentPath = globalCodePath+ File.separator + prefix + File.separator + UUID.randomUUID();
+        // 用户代码文件
+        String userCodePath = userCodeParentPath + File.separator + globalCodeFileName;
+        return FileUtil.writeString(code, userCodePath,
+                StandardCharsets.UTF_8);
     }
+
 
     /**
      * 2. 编译代码
      *
-     * @param userCodeFile
+     * @param compileCmd
      * @return
      */
-    public ExecuteMessage compileCodeFile(File userCodeFile) {
-        String complieCmd = String.format("javac -encoding utf-8 %s", userCodeFile.getAbsolutePath());
+    private ExecuteMessage compileCode(String compileCmd) {
         try {
-            Process compileProcess = Runtime.getRuntime().exec(complieCmd);
-            ExecuteMessage executeMessage = ProcessUtils.runProcessAndGetMessage(compileProcess, "编译");
+            Process compileProcess = Runtime.getRuntime().exec(compileCmd);
+            ExecuteMessage executeMessage = ProcessUtil.runProcessAndGetMessage(compileProcess, "编译");
             if (executeMessage.getExitValue() != 0) {
                 throw new RuntimeException("编译错误");
             }
             return executeMessage;
-        } catch (Exception e) {
-            // return getErrorResponse(e);
+        } catch (IOException e) {
             throw new RuntimeException(e);
         }
+
     }
+
 
     /**
      * 3. 执行字节码文件，获得执行结果列表
      *
-     * @param inputList
-     * @return
+     * @param inputList 输入用例
+     * @param runCmd    运行的cmd
+     * @return List<ExecuteMessage>
      */
-    public List<ExecuteMessage> runCodeFile(File userCodeFile, List<String> inputList) {
-        String userCodeParentPath = userCodeFile.getParentFile().getAbsolutePath();
-        List<ExecuteMessage> executeMessageList = new ArrayList<>();
+    private List<ExecuteMessage> runCode(List<String> inputList, String runCmd) {
+        List<ExecuteMessage> executeMessageList = new LinkedList<>();
         for (String input : inputList) {
-            String runCmd = String.format("java -Xmx256m -Dfile.encoding=utf-8 -cp %s Main %s", userCodeParentPath, input);
+            Process runProcess;
             try {
-                Process runProcess = Runtime.getRuntime().exec(runCmd);
-                // 超时控制
+                runProcess = Runtime.getRuntime().exec(runCmd);
                 new Thread(() -> {
                     try {
                         Thread.sleep(TIMEOUT);
-                        System.out.println("超时了，中断");
+                        log.info("超时了，中断");
                         runProcess.destroy();
                     } catch (InterruptedException e) {
-                        e.printStackTrace();
+                        throw new RuntimeException(e);
                     }
                 }).start();
-                ExecuteMessage executeMessage = ProcessUtils.runProcessAndGetMessage(runProcess, "运行");
-                System.out.println(executeMessage);
+                ExecuteMessage executeMessage = ProcessUtil.handleProcessInteraction(runProcess, input, "运行");
+                log.info("{}", executeMessage);
                 executeMessageList.add(executeMessage);
-            } catch (Exception e) {
+            } catch (IOException e) {
                 throw new RuntimeException("程序执行异常，" + e);
             }
         }
         return executeMessageList;
     }
+
 
     /**
      * 4. 获取输出结果

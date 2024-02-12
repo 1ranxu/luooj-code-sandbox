@@ -173,7 +173,7 @@ public class JavaDockerCodeSandBox0 extends JavaCodeSandBoxTemplate {
             };
 
             // 获取占用的内存
-            final long[] maxMemory = {0L};
+            final double[] maxMemory = {0L};
             StatsCmd statsCmd = dockerClient.statsCmd(containerId);
             ResultCallback<Statistics> statisticsResultCallback = statsCmd.exec(new ResultCallback<Statistics>() {
                 @Override

@@ -3,6 +3,10 @@ package com.luoying.core;
 import com.luoying.model.ExecuteCodeRequest;
 import com.luoying.model.ExecuteCodeResponse;
 
+/**
+ * @author 落樱的悔恨
+ * 代码沙箱
+ */
 public interface CodeSandBox {
 
     /**

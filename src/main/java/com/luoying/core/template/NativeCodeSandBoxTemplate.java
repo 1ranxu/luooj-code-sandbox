@@ -1,4 +1,4 @@
-package com.luoying.template;
+package com.luoying.core.template;
 
 import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.util.StrUtil;
@@ -27,7 +27,7 @@ import java.util.UUID;
  * 注意每个实现类必须自定义代码存放路径
  */
 @Slf4j
-public abstract class CodeSandBoxTemplate implements CodeSandBox {
+public abstract class NativeCodeSandBoxTemplate implements CodeSandBox {
     // 顶级目录（相对于当前项目）
     String globalCodeDirPath;
 
@@ -48,7 +48,7 @@ public abstract class CodeSandBoxTemplate implements CodeSandBox {
         WORD_TREE.addWords("Files", "exec");
     }
 
-    protected CodeSandBoxTemplate(String globalCodeDirPath, String prefix, String globalCodeFileName) {
+    protected NativeCodeSandBoxTemplate(String globalCodeDirPath, String prefix, String globalCodeFileName) {
         this.globalCodeDirPath = globalCodeDirPath;
         this.prefix = prefix;
         this.globalCodeFileName = globalCodeFileName;
@@ -62,8 +62,7 @@ public abstract class CodeSandBoxTemplate implements CodeSandBox {
      * @param userCodePath       用户代码文件的绝对路径
      * @return {@link CodeSandBoxCmd}
      */
-    protected abstract CodeSandBoxCmd getCmd(String userCodeParentPath,
-                                             String userCodePath);
+    protected abstract CodeSandBoxCmd getCmd(String userCodeParentPath, String userCodePath);
 
     /**
      * 执行代码
@@ -105,11 +104,7 @@ public abstract class CodeSandBoxTemplate implements CodeSandBox {
                 judgeInfo.setTime(watch.getLastTaskTimeMillis());
                 judgeInfo.setMemory((double) (end - start) / 1024);
                 // 构造执行代码响应，然后返回
-                return ExecuteCodeResponse.builder()
-                        .outputList(null)
-                        .message(JudgeInfoMessagenum.DANGEROUS_OPERATION.getValue())
-                        .judgeInfo(judgeInfo)
-                        .build();
+                return ExecuteCodeResponse.builder().outputList(null).message(JudgeInfoMessagenum.DANGEROUS_OPERATION.getValue()).judgeInfo(judgeInfo).build();
             }
 
             // 获取用户代码文件的绝对路径(项目目录/顶级目录/二级目录/UUID/文件名.后缀)
@@ -137,11 +132,7 @@ public abstract class CodeSandBoxTemplate implements CodeSandBox {
                 judgeInfo.setTime(watch.getLastTaskTimeMillis());
                 judgeInfo.setMemory((double) (end - start) / 1024);
                 // 构造执行代码响应，然后返回
-                return ExecuteCodeResponse.builder()
-                        .outputList(null)
-                        .message(compileCodeFileExecuteMessage.getErrorMessage())
-                        .judgeInfo(judgeInfo)
-                        .build();
+                return ExecuteCodeResponse.builder().outputList(null).message(compileCodeFileExecuteMessage.getErrorMessage()).judgeInfo(judgeInfo).build();
             }
 
             // 3. 执行代码，得到输出结果
@@ -158,16 +149,12 @@ public abstract class CodeSandBoxTemplate implements CodeSandBox {
                     judgeInfo.setTime(watch.getLastTaskTimeMillis());
                     judgeInfo.setMemory((double) (end - start) / 1024);
                     // 构造执行代码响应，然后返回
-                    return ExecuteCodeResponse.builder()
-                            .message(executeMessage.getErrorMessage())
-                            .judgeInfo(judgeInfo)
-                            .build();
+                    return ExecuteCodeResponse.builder().message(executeMessage.getErrorMessage()).judgeInfo(judgeInfo).build();
                 }
             }
             // 4. 收集整理输出结果
             executeCodeResponse = getOutputResponse(executeMessageList);
-        } catch (
-                Exception e) {
+        } catch (Exception e) {
             log.info(e.getMessage());
         } finally {
             // 5. 文件清理，释放空间
@@ -196,17 +183,16 @@ public abstract class CodeSandBoxTemplate implements CodeSandBox {
         // 获取工作目录（即项目目录）
         String userDir = System.getProperty("user.dir");
         // 构建 项目目录/顶级目录
-        String globalCodePath = userDir + File.separator + globalCodeDirPath;
-        if (!FileUtil.exist(globalCodePath)) {// 如果顶级目录不存在就创建
-            FileUtil.mkdir(globalCodePath);
+        String topDirectory = userDir + File.separator + globalCodeDirPath;
+        if (!FileUtil.exist(topDirectory)) {// 如果顶级目录不存在就创建
+            FileUtil.mkdir(topDirectory);
         }
         // 构建 项目目录/顶级目录/二级目录/UUID (通过prefix区分不同语言)
-        String userCodeParentPath = globalCodePath + File.separator + prefix + File.separator + UUID.randomUUID();
+        String userCodeParentPath = topDirectory + File.separator + prefix + File.separator + UUID.randomUUID();
         // 构建 项目目录/顶级目录/二级目录/UUID/文件名.后缀 (用户代码文件)
         String userCodePath = userCodeParentPath + File.separator + globalCodeFileName;
         // 保存
-        return FileUtil.writeString(code, userCodePath,
-                StandardCharsets.UTF_8);
+        return FileUtil.writeString(code, userCodePath, StandardCharsets.UTF_8);
     }
 
 
@@ -242,17 +228,18 @@ public abstract class CodeSandBoxTemplate implements CodeSandBox {
         List<ExecuteMessage> executeMessageList = new LinkedList<>();
         // 遍历inputList，执行每个输入用例
         for (String input : inputList) {
-            Process runProcess;
             try {
                 // 获取运行的Process
-                runProcess = Runtime.getRuntime().exec(runCmd);
+                Process runProcess = Runtime.getRuntime().exec(runCmd);
                 // 另起一个线程
                 new Thread(() -> {
                     try {
                         // 如果超时了就销毁运行的Process
                         Thread.sleep(TIMEOUT);
-                        log.info("超时了，中断");
-                        runProcess.destroy();
+                        if (runProcess.isAlive()) {
+                            log.info("超时了，中断");
+                            runProcess.destroy();
+                        }
                     } catch (InterruptedException e) {
                         throw new RuntimeException(e);
                     }
@@ -288,7 +275,7 @@ public abstract class CodeSandBoxTemplate implements CodeSandBox {
         double maxMemory = 0;
 
         for (ExecuteMessage executeMessage : executeMessageList) {
-            // ，就，然后
+            // 获取错误信息
             String errorMessage = executeMessage.getErrorMessage();
             if (StrUtil.isNotBlank(errorMessage)) {// 如果ExecuteMessage的属性ErrorMessage不为空
                 // 构造ExecuteCodeResponse
@@ -330,7 +317,7 @@ public abstract class CodeSandBoxTemplate implements CodeSandBox {
     /**
      * 5. 删除文件
      *
-     * @param userCodeFile
+     * @param userCodeFile 用户文件
      * @return
      */
     public boolean deleteFile(File userCodeFile) {

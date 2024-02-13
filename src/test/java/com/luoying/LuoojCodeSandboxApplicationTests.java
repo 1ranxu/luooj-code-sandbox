@@ -1,7 +1,7 @@
 package com.luoying;
 
-import com.luoying.core.CppNativeCodeSandBox;
-import com.luoying.core.JavaNativeCodeSandBox;
+import com.luoying.core.nativ.CppNativeCodeSandBox;
+import com.luoying.core.nativ.JavaNativeCodeSandBox;
 import com.luoying.model.ExecuteCodeRequest;
 import com.luoying.model.ExecuteCodeResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 
 import java.lang.management.*;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -241,6 +242,40 @@ class LuoojCodeSandboxApplicationTests {
         long end = memoryMXBean.getNonHeapMemoryUsage().getUsed() + memoryMXBean.getHeapMemoryUsage().getUsed();
         log.info("end: {}", end);
         log.info("cost: {}", (double)(end - start) / 1024 / 1024);
+    }
+
+    @Test
+    void test7(){
+        String[] ins = new String[]{"1","2"};
+        String[] cmds = "java -Xmx256m -Dfile.encoding=UTF-8 -cp /app Main".split(" ");
+        ArrayList<String> cmdList = new ArrayList<>();
+        cmdList.add("echo");
+        for (String in : ins) {
+            cmdList.add(in);
+        }
+        cmdList.add("|");
+        for (String cmd : cmds) {
+            cmdList.add(cmd);
+        }
+        Object[] cmdArray = cmdList.toArray();
+        log.info("创建执行命令：" + Arrays.toString(cmdArray));
+    }
+
+    @Test
+    void test8(){
+        String[] ins = new String[]{"1","2"};
+        String[] cmds = "/app/main".split(" ");
+        ArrayList<String> cmdList = new ArrayList<>();
+        cmdList.add("echo");
+        for (String in : ins) {
+            cmdList.add(in);
+        }
+        cmdList.add("|");
+        for (String cmd : cmds) {
+            cmdList.add(cmd);
+        }
+        Object[] cmdArray = cmdList.toArray();
+        log.info("创建执行命令：" + Arrays.toString(cmdArray));
     }
 
 }

@@ -1,7 +1,7 @@
-package com.luoying.core;
+package com.luoying.core.nativ;
 
 import com.luoying.model.CodeSandBoxCmd;
-import com.luoying.template.CodeSandBoxTemplate;
+import com.luoying.core.template.NativeCodeSandBoxTemplate;
 import org.springframework.stereotype.Component;
 
 import java.io.File;
@@ -11,7 +11,7 @@ import java.io.File;
  * cpp原生代码沙箱
  */
 @Component
-public class CppNativeCodeSandBox extends CodeSandBoxTemplate {
+public class CppNativeCodeSandBox extends NativeCodeSandBoxTemplate {
     // 顶级目录（相对于当前项目）
     private static final String GLOBAL_CODE_DIR_PATH = "tempCode";
     // 二级目录（用于区分编程语言）（相对于当前项目）

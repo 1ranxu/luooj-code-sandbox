@@ -37,7 +37,7 @@ public class ProcessUtil {
             // 起始内存
             MemoryMXBean memoryMXBean = ManagementFactory.getMemoryMXBean();
             long start = memoryMXBean.getHeapMemoryUsage().getUsed() + memoryMXBean.getNonHeapMemoryUsage().getUsed();
-            log.info("{}start cost{}", opName, start / 1024);
+            log.info("{}start {}", opName, start / 1024);
             // 执行进程
             int exitValue = process.waitFor();
             // 设置退出码
@@ -79,7 +79,7 @@ public class ProcessUtil {
             watch.stop();
             // 结束内存
             long end = memoryMXBean.getHeapMemoryUsage().getUsed() + memoryMXBean.getNonHeapMemoryUsage().getUsed();
-            log.info("{}end cost{}", opName, end / 1024);
+            log.info("{}end {}", opName, end / 1024);
             // 设置时间
             executeMessage.setTime(watch.getLastTaskTimeMillis());
             // 设置内存

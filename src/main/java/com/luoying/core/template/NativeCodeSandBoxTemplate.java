@@ -23,7 +23,7 @@ import java.util.UUID;
 
 /**
  * @author 落樱的悔恨
- * 代码沙箱模板
+ * 原生代码沙箱模板
  */
 @Slf4j
 public abstract class NativeCodeSandBoxTemplate implements CodeSandBox {
@@ -55,7 +55,7 @@ public abstract class NativeCodeSandBoxTemplate implements CodeSandBox {
 
 
     /**
-     * 每个实现类必须实现编译以及运行的cmd
+     * 每个实现类必须实现（以提供编译以及运行的cmd）
      *
      * @param userCodeParentPath 用户代码父目录的绝对路径
      * @param userCodePath       用户代码文件的绝对路径
@@ -79,14 +79,14 @@ public abstract class NativeCodeSandBoxTemplate implements CodeSandBox {
         MemoryMXBean memoryMXBean = ManagementFactory.getMemoryMXBean();
         long start = memoryMXBean.getHeapMemoryUsage().getUsed() + memoryMXBean.getNonHeapMemoryUsage().getUsed();
 
-        // 用户代码文件、执行代码响应、判题信息对象的初始化
+        // 用户代码文件、执行代码响应对象的初始化
         File userCodeFile = null;
         ExecuteCodeResponse executeCodeResponse = null;
-        QuestionSubmitJudgeInfo judgeInfo = null;
 
         try {
             // 获取输入用例
             List<String> inputList = executeCodeRequest.getInputList();
+
             // 获取用户代码
             String code = executeCodeRequest.getCode();
 
@@ -169,7 +169,7 @@ public abstract class NativeCodeSandBoxTemplate implements CodeSandBox {
 
     /**
      * 1. 保存用户代码到文件中
-     * 保存到文件中的格式应为: tempCode/language/UUID/代码文件
+     * 文件的路径应为: tempCode/language/UUID/代码文件
      *
      * @param code 代码
      */
@@ -237,7 +237,7 @@ public abstract class NativeCodeSandBoxTemplate implements CodeSandBox {
                 // 另起一个线程
                 new Thread(() -> {
                     try {
-                        // 如果超时了就销毁运行的Process
+                        // 如果执行单个用例超时了，就销毁运行的Process
                         Thread.sleep(TIMEOUT);
                         if (runProcess.isAlive()) {
                             log.info("超时了，中断");
@@ -281,11 +281,12 @@ public abstract class NativeCodeSandBoxTemplate implements CodeSandBox {
         for (ExecuteMessage executeMessage : executeMessageList) {
             // 获取错误信息
             String errorMessage = executeMessage.getErrorMessage();
-            if (StrUtil.isNotBlank(errorMessage)) {// 如果ExecuteMessage的属性ErrorMessage不为空
+            if (StrUtil.isNotBlank(errorMessage)) {// 如果ExecuteMessage的属性ErrorMessage不为空，则执行中存在错误
                 // 构造ExecuteCodeResponse
+                executeCodeResponse.setOutputList(null);
                 executeCodeResponse.setMessage(errorMessage);
-                // 执行中存在错误
                 executeCodeResponse.setStatus(3);
+                executeCodeResponse.setJudgeInfo(null);
                 // 跳出循环
                 break;
             }

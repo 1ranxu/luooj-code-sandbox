@@ -24,7 +24,7 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * @author 落樱的悔恨
- * Docker 代码沙箱模板类
+ * Docker 代码沙箱模板
  */
 @Slf4j
 public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
@@ -37,14 +37,15 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
     // 代码文件名
     String codeFileName;
 
-    // jdk镜像
+    // 镜像名称
     String imageName;
+
+    // 容器名称
+    String containerName;
 
     // 超时时间 ms
     private static final long TIMEOUT = 5000L;
 
-    // 容器名称
-    String containerName;
 
     protected DockerCodeSandBoxTemplate(String topDirPath, String secDirPath, String codeFileName, String imageName, String containerName) {
         this.topDirPath = topDirPath;
@@ -105,7 +106,7 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
             // 4. 收集整理输出结果
             executeCodeResponse = getOutputResponse(executeMessageList);
         } catch (Exception e) {
-            throw new RuntimeException(e);
+            log.info(e.getMessage());
         } finally {
             // 5. 文件清理，释放空间
             boolean b = deleteFile(userCodeFile);
@@ -119,7 +120,7 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
 
     /**
      * 1. 保存用户代码到文件中
-     * 保存到文件中的路径应为: tempCode/language/UUID/代码文件
+     * 文件中的路径应为: tempCode/language/UUID/代码文件
      *
      * @param code 代码
      * @return {@link File}
@@ -178,9 +179,9 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
         // 判断要拉取的镜像是否已经存在
         boolean isImageExists = images.stream().anyMatch(image -> Arrays.asList(image.getRepoTags()).contains(imageName));
         if (!isImageExists) {// 不存在
-            // 获取拉取镜像命令对象
+            // 获取拉取镜像命令
             PullImageCmd pullImageCmd = dockerClient.pullImageCmd(imageName);
-            // 回调函数
+            // 拉取镜像回调函数（用于查看拉取镜像的状态）
             PullImageResultCallback pullImageResultCallback = new PullImageResultCallback() {
                 @Override
                 public void onNext(PullResponseItem item) {
@@ -219,9 +220,9 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
             // 构建创建容器命令
             CreateContainerCmd containerCmd = dockerClient.createContainerCmd(imageName).withName(containerName);
             HostConfig hostConfig = new HostConfig();
-            // 把 项目目录/顶级目录/二级目录 映射到 容器内的目录
+            // 把 项目目录/顶级目录/二级目录 挂载到 容器内的目录
             hostConfig.setBinds(new Bind(secDirPath, new Volume("/app")));
-            // 限制最大内存
+            // 限制最大内存 100M
             hostConfig.withMemory(100 * 1000 * 1000L);
             // 不让内存往硬盘写
             hostConfig.withMemorySwap(0L);
@@ -348,7 +349,7 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
                 }
             });
 
-            // 开始内存统计（会让Docker容器的守护线程一直实时获取容器的内存）
+            // 开始内存统计（Docker容器的守护线程会一直实时获取容器的内存）
             statsCmd.exec(statisticsResultCallback);
 
             // 执行命令
@@ -399,11 +400,12 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
         for (ExecuteMessage executeMessage : executeMessageList) {
             // 获取错误信息
             String errorMessage = executeMessage.getErrorMessage();
-            if (StrUtil.isNotBlank(errorMessage)) {// 如果ExecuteMessage的属性ErrorMessage不为空
+            if (StrUtil.isNotBlank(errorMessage)) {// 如果ExecuteMessage的属性ErrorMessage不为空。则执行中存在错误
                 // 构造ExecuteCodeResponse
+                executeCodeResponse.setOutputList(null);
                 executeCodeResponse.setMessage(errorMessage);
-                // 执行中存在错误
                 executeCodeResponse.setStatus(3);
+                executeCodeResponse.setJudgeInfo(null);
                 // 跳出循环
                 break;
             }

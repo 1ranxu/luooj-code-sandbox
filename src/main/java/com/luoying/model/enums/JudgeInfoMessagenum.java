@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
+ * @author 落樱的悔恨
  * 判题信息消息枚举
  */
 public enum JudgeInfoMessagenum {
@@ -35,7 +36,6 @@ public enum JudgeInfoMessagenum {
     /**
      * 获取值列表
      *
-     * @return
      */
     public static List<String> getValues() {
         return Arrays.stream(values()).map(item -> item.value).collect(Collectors.toList());
@@ -45,7 +45,6 @@ public enum JudgeInfoMessagenum {
      * 根据 value 获取枚举
      *
      * @param value
-     * @return
      */
     public static JudgeInfoMessagenum getEnumByValue(String value) {
         if (ObjectUtils.isEmpty(value)) {

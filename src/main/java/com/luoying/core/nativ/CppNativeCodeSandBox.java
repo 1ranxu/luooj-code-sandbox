@@ -1,37 +1,39 @@
 package com.luoying.core.nativ;
 
-import com.luoying.model.CodeSandBoxCmd;
 import com.luoying.core.template.NativeCodeSandBoxTemplate;
+import com.luoying.model.CodeSandBoxCmd;
 import org.springframework.stereotype.Component;
 
 import java.io.File;
 
 /**
  * @author 落樱的悔恨
- * cpp原生代码沙箱
+ * Cpp 原生代码沙箱
  */
 @Component
 public class CppNativeCodeSandBox extends NativeCodeSandBoxTemplate {
     // 顶级目录（相对于当前项目）
-    private static final String GLOBAL_CODE_DIR_PATH = "tempCode";
+    private static final String TOP_DIR_PATH = "tempCode";
+
     // 二级目录（用于区分编程语言）（相对于当前项目）
-    private static final String PREFIX = "cpp";
+    private static final String SEC_DIR_PATH = "cpp";
+
     // 代码文件名
-    private static final String GLOBAL_CPP_NAME = "main.cpp";
+    private static final String CODE_FILE_NAME = "main.cpp";
 
     /**
      * 将参数提供给父类，父类进行具体处理
      */
     public CppNativeCodeSandBox() {
-        super(GLOBAL_CODE_DIR_PATH, PREFIX, GLOBAL_CPP_NAME);
+        super(TOP_DIR_PATH, SEC_DIR_PATH, CODE_FILE_NAME);
     }
 
     /**
-     * 构造c++编译代码的命令和执行代码的命令
+     * 构造 cpp 编译代码的命令和执行代码的命令
      *
      * @param userCodeParentPath 用户代码父目录的绝对路径
      * @param userCodePath       用户代码文件的绝对路径
-     * @return
+     * @return {@link CodeSandBoxCmd}
      */
     @Override
     public CodeSandBoxCmd getCmd(String userCodeParentPath, String userCodePath) {

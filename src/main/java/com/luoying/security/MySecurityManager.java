@@ -3,6 +3,7 @@ package com.luoying.security;
 import java.security.Permission;
 
 /**
+ * @author 落樱的悔恨
  * 我的安全管理器
  */
 public class MySecurityManager extends SecurityManager {

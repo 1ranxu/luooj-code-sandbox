@@ -1,6 +1,7 @@
 package com.luoying.unsafeCode;
 
 /**
+ * @author 落樱的悔恨
  * 无限睡眠（阻塞程序执行）
  */
 public class SleepError {

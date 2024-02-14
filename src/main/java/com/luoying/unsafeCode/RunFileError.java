@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 
 /**
+ * @author 落樱的悔恨
  * 运行其他程序（比如木马）
  */
 public class RunFileError {

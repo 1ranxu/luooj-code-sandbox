@@ -3,6 +3,7 @@ package com.luoying.security;
 import java.security.Permission;
 
 /**
+ * @author 落樱的悔恨
  * 禁用所有权限的安全管理器
  */
 public class DenyAllSecurityManager extends SecurityManager {

@@ -7,6 +7,7 @@ import java.nio.file.Paths;
 import java.util.Arrays;
 
 /**
+ * @author 落樱的悔恨
  * 向服务器写文件（植入危险程序）
  */
 public class WriteFileError {

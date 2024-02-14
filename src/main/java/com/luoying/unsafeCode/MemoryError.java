@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
+ * @author 落樱的悔恨
  * 无限占用系统内存
  */
 public class MemoryError {

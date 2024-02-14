@@ -102,14 +102,14 @@ public abstract class NativeCodeSandBoxTemplate implements CodeSandBox {
             ExecuteMessage compileCodeFileExecuteMessage = compileCode(compileCmd);
             if (compileCodeFileExecuteMessage.getExitValue() != 0) {
                 log.info("编译信息：{}", compileCodeFileExecuteMessage);
-                return getErrorResponse(compileCodeFileExecuteMessage);
+                return getCompileCodeErrorResponse(compileCodeFileExecuteMessage);
             }
 
             // 3. 执行代码，得到输出结果
             List<ExecuteMessage> executeMessageList = runCode(inputList, runCmd);
             for (ExecuteMessage executeMessage : executeMessageList) {
                 if (executeMessage.getExitValue() != 0) {
-                    return getErrorResponse(executeMessage);
+                    return getRunCodeErrorResponse(executeMessage);
                 }
             }
             // 4. 收集整理输出结果
@@ -126,10 +126,29 @@ public abstract class NativeCodeSandBoxTemplate implements CodeSandBox {
         return executeCodeResponse;
     }
 
-    private ExecuteCodeResponse getErrorResponse(ExecuteMessage executeMessage) {
+    /**
+     * 获取执行代码响应（保存代码失败）
+     */
+    private ExecuteCodeResponse getSaveCodeErrorResponse() {
+        QuestionSubmitJudgeInfo judgeInfo = new QuestionSubmitJudgeInfo();
+        judgeInfo.setMessage(JudgeInfoMessagenum.DANGEROUS_OPERATION.getValue());
+        judgeInfo.setTime(-1L);
+        judgeInfo.setMemory(-1D);
+        return ExecuteCodeResponse.builder()
+                .outputList(null)
+                .message(JudgeInfoMessagenum.DANGEROUS_OPERATION.getValue())
+                .status(3)
+                .judgeInfo(judgeInfo).build();
+    }
+
+    /**
+     * 获取执行代码响应（编译代码失败）
+     */
+    private ExecuteCodeResponse getCompileCodeErrorResponse(ExecuteMessage executeMessage) {
         int index = executeMessage.getErrorMessage().indexOf(codeFileName, 0);
         String userCodeParentPath = executeMessage.getErrorMessage().substring(0, index);
         log.info(userCodeParentPath);
+        // 去除错误信息中的系统路径
         String errormessage = executeMessage.getErrorMessage().replace(userCodeParentPath, "");
         QuestionSubmitJudgeInfo judgeInfo = new QuestionSubmitJudgeInfo();
         judgeInfo.setMessage(errormessage);
@@ -142,14 +161,17 @@ public abstract class NativeCodeSandBoxTemplate implements CodeSandBox {
                 .judgeInfo(judgeInfo).build();
     }
 
-    private ExecuteCodeResponse getSaveCodeErrorResponse() {
+    /**
+     * 获取执行代码响应（运行代码失败）
+     */
+    private ExecuteCodeResponse getRunCodeErrorResponse(ExecuteMessage executeMessage) {
         QuestionSubmitJudgeInfo judgeInfo = new QuestionSubmitJudgeInfo();
-        judgeInfo.setMessage(JudgeInfoMessagenum.DANGEROUS_OPERATION.getValue());
+        judgeInfo.setMessage(executeMessage.getErrorMessage());
         judgeInfo.setTime(-1L);
         judgeInfo.setMemory(-1D);
         return ExecuteCodeResponse.builder()
                 .outputList(null)
-                .message(JudgeInfoMessagenum.DANGEROUS_OPERATION.getValue())
+                .message(executeMessage.getErrorMessage())
                 .status(3)
                 .judgeInfo(judgeInfo).build();
     }

@@ -127,13 +127,17 @@ public abstract class NativeCodeSandBoxTemplate implements CodeSandBox {
     }
 
     private ExecuteCodeResponse getErrorResponse(ExecuteMessage executeMessage) {
+        int index = executeMessage.getErrorMessage().indexOf(codeFileName, 0);
+        String userCodeParentPath = executeMessage.getErrorMessage().substring(0, index);
+        log.info(userCodeParentPath);
+        String errormessage = executeMessage.getErrorMessage().replace(userCodeParentPath, "");
         QuestionSubmitJudgeInfo judgeInfo = new QuestionSubmitJudgeInfo();
-        judgeInfo.setMessage(executeMessage.getErrorMessage());
+        judgeInfo.setMessage(errormessage);
         judgeInfo.setTime(-1L);
         judgeInfo.setMemory(-1D);
         return ExecuteCodeResponse.builder()
                 .outputList(null)
-                .message(executeMessage.getErrorMessage())
+                .message(errormessage)
                 .status(3)
                 .judgeInfo(judgeInfo).build();
     }

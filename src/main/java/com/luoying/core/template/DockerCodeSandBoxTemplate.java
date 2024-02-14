@@ -113,8 +113,8 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
 
             // 2. 编译代码
             ExecuteMessage compileCodeFileExecuteMessage = compileCode(compileCmd);
-            log.info(compileCodeFileExecuteMessage.toString());
             if (StrUtil.isNotBlank(compileCodeFileExecuteMessage.getErrorMessage())) {
+                log.info(compileCodeFileExecuteMessage.toString());
                 return getCompileCodeErrorResponse(compileCodeFileExecuteMessage);
             }
 
@@ -123,6 +123,7 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
             List<ExecuteMessage> executeMessageList = runCodeFile(inputList, runCmd, userCodeFile.getParentFile().getParentFile().getAbsolutePath());
             for (ExecuteMessage executeMessage : executeMessageList) {
                 if (StrUtil.isNotBlank(executeMessage.getErrorMessage())) {
+                    log.info(executeMessage.toString());
                     return getRunCodeErrorResponse(executeMessage);
                 }
             }
@@ -348,11 +349,11 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
                 public void onNext(Frame frame) {
                     StreamType streamType = frame.getStreamType();
                     if (StreamType.STDERR.equals(streamType)) {
-                        errorMessage[0] = new String(frame.getPayload());
-                        errorMessage[0] = errorMessage[0].substring(0, errorMessage[0].length() - 1);
+                        errorMessage[0] = new String(frame.getPayload(),StandardCharsets.UTF_8);
+                        message[0] = message[0].substring(0, message[0].length() - 1);
                         log.info("输出错误结果" + errorMessage[0]);
                     } else {
-                        message[0] = new String(frame.getPayload());
+                        message[0] = new String(frame.getPayload(),StandardCharsets.UTF_8);
                         message[0] = message[0].substring(0, message[0].length() - 1);// 去掉最后的\n符
                         log.info("输出结果" + message[0]);
                     }

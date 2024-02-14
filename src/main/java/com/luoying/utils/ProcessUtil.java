@@ -49,10 +49,10 @@ public class ProcessUtil {
             } else {// 其他-异常
                 // 异常退出
                 log.error(opName + "失败，错误码为: {}", exitValue);
-                /*// 获取错误输入流(Linux)
-                BufferedReader errorBufferedReader = new BufferedReader(new InputStreamReader(process.getErrorStream()));*/
-                // 获取错误输入流(Windows)
-                BufferedReader errorBufferedReader = new BufferedReader(new InputStreamReader(process.getErrorStream(), "GBK"));
+                // 获取错误输入流(Linux)
+                BufferedReader errorBufferedReader = new BufferedReader(new InputStreamReader(process.getErrorStream()));
+                /*// 获取错误输入流(Windows)
+                BufferedReader errorBufferedReader = new BufferedReader(new InputStreamReader(process.getErrorStream(), "GBK"));*/
                 // 读取错误信息
                 String errorOutputLine = "";
                 List<String> errorOutputStrList = new ArrayList<>();

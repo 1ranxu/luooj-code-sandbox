@@ -3,6 +3,8 @@ package com.luoying.core.template;
 import cn.hutool.core.date.StopWatch;
 import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.util.StrUtil;
+import cn.hutool.dfa.FoundWord;
+import cn.hutool.dfa.WordTree;
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.async.ResultCallback;
 import com.github.dockerjava.api.command.*;
@@ -12,6 +14,7 @@ import com.github.dockerjava.core.command.ExecStartResultCallback;
 import com.github.dockerjava.core.command.PullImageResultCallback;
 import com.luoying.core.CodeSandBox;
 import com.luoying.model.*;
+import com.luoying.model.enums.JudgeInfoMessagenum;
 import com.luoying.utils.ProcessUtil;
 import lombok.extern.slf4j.Slf4j;
 
@@ -45,6 +48,14 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
 
     // 超时时间 ms
     private static final long TIMEOUT = 5000L;
+
+    // 字典树
+    private static final WordTree WORD_TREE;
+
+    static {
+        WORD_TREE = new WordTree();
+        WORD_TREE.addWords("Files", "exec");
+    }
 
 
     protected DockerCodeSandBoxTemplate(String topDirPath, String secDirPath, String codeFileName, String imageName, String containerName) {
@@ -83,7 +94,11 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
             String code = executeCodeRequest.getCode();
 
             // 1. 把用户的代码保存为文件
-            userCodeFile = saveCodeFile(code);
+            try {
+                userCodeFile = saveCodeFile(code);
+            } catch (Exception e) {
+                return getSaveCodeErrorResponse();
+            }
 
             // 获取用户代码文件的绝对路径(项目目录/顶级目录/二级目录/UUID/文件名.后缀)
             String userCodePath = userCodeFile.getAbsolutePath();
@@ -99,12 +114,22 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
             // 2. 编译代码
             ExecuteMessage compileCodeFileExecuteMessage = compileCode(compileCmd);
             log.info(compileCodeFileExecuteMessage.toString());
+            if (StrUtil.isNotBlank(compileCodeFileExecuteMessage.getErrorMessage())) {
+                return getErrorResponse(compileCodeFileExecuteMessage);
+            }
+
 
             // 3. 执行代码，得到输出结果
             List<ExecuteMessage> executeMessageList = runCodeFile(inputList, runCmd, userCodeFile.getParentFile().getParentFile().getAbsolutePath());
+            for (ExecuteMessage executeMessage : executeMessageList) {
+                if (StrUtil.isNotBlank(executeMessage.getErrorMessage())) {
+                    return getErrorResponse(executeMessage);
+                }
+            }
 
             // 4. 收集整理输出结果
             executeCodeResponse = getOutputResponse(executeMessageList);
+
         } catch (Exception e) {
             log.info(e.getMessage());
         } finally {
@@ -117,6 +142,30 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
         return executeCodeResponse;
     }
 
+    private ExecuteCodeResponse getErrorResponse(ExecuteMessage executeMessage) {
+        QuestionSubmitJudgeInfo judgeInfo = new QuestionSubmitJudgeInfo();
+        judgeInfo.setMessage(executeMessage.getErrorMessage());
+        judgeInfo.setTime(-1L);
+        judgeInfo.setMemory(-1D);
+        return ExecuteCodeResponse.builder()
+                .outputList(null)
+                .message(executeMessage.getErrorMessage())
+                .status(3)
+                .judgeInfo(judgeInfo).build();
+    }
+
+    private ExecuteCodeResponse getSaveCodeErrorResponse() {
+        QuestionSubmitJudgeInfo judgeInfo = new QuestionSubmitJudgeInfo();
+        judgeInfo.setMessage(JudgeInfoMessagenum.DANGEROUS_OPERATION.getValue());
+        judgeInfo.setTime(-1L);
+        judgeInfo.setMemory(-1D);
+        return ExecuteCodeResponse.builder()
+                .outputList(null)
+                .message(JudgeInfoMessagenum.DANGEROUS_OPERATION.getValue())
+                .status(3)
+                .judgeInfo(judgeInfo).build();
+    }
+
 
     /**
      * 1. 保存用户代码到文件中
@@ -126,6 +175,12 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
      * @return {@link File}
      */
     public File saveCodeFile(String code) {
+        // 使用字典树查看用户代码是否有一些危险操作
+        FoundWord foundWord = WORD_TREE.matchWord(code);
+        if (foundWord != null) {
+            throw new RuntimeException("危险操作");
+        }
+
         // 获取工作目录（即项目目录）
         String userDir = System.getProperty("user.dir");
 
@@ -191,9 +246,7 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
             };
             // 执行拉取镜像命令
             try {
-                pullImageCmd
-                        .exec(pullImageResultCallback)
-                        .awaitCompletion();
+                pullImageCmd.exec(pullImageResultCallback).awaitCompletion();
             } catch (InterruptedException e) {
                 log.error("拉取镜像异常");
             }
@@ -204,8 +257,7 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
         // 获取所有容器（包括未启动的）
         List<Container> containers = dockerClient.listContainersCmd().withShowAll(true).exec();
         // 根据名称判断容器是否存在（容器的实际名称：/自定义名称）
-        Optional<Container> containerOptional = containers.stream().
-                filter(container -> Arrays.asList(container.getNames()).contains("/" + containerName)).findFirst();
+        Optional<Container> containerOptional = containers.stream().filter(container -> Arrays.asList(container.getNames()).contains("/" + containerName)).findFirst();
         String containerId;
         if (containerOptional.isPresent()) {// 存在
             // 获取容器
@@ -230,15 +282,7 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
             hostConfig.withCpuCount(1L);
             // hostConfig.withSecurityOpts(Arrays.asList("seccomp=安全管理配置字符串"));
             // 创建容器
-            CreateContainerResponse createContainerResponse = containerCmd
-                    .withReadonlyRootfs(true)
-                    .withNetworkDisabled(true)
-                    .withHostConfig(hostConfig)
-                    .withAttachStdin(true)
-                    .withAttachStdout(true)
-                    .withAttachStderr(true)
-                    .withTty(true)
-                    .exec();
+            CreateContainerResponse createContainerResponse = containerCmd.withReadonlyRootfs(true).withNetworkDisabled(true).withHostConfig(hostConfig).withAttachStdin(true).withAttachStdout(true).withAttachStderr(true).withTty(true).exec();
             log.info("创建容器响应=>{}", createContainerResponse.toString());
             // 记录容器id
             containerId = createContainerResponse.getId();
@@ -256,13 +300,7 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
             input = "'" + input + "'";
             // 构造执行命令
             String[] command = {"sh", "-c", "echo " + input + " | " + runCmd};
-            ExecCreateCmdResponse execCreateCmdResponse = dockerClient
-                    .execCreateCmd(containerId)
-                    .withCmd(command)
-                    .withAttachStderr(true)
-                    .withAttachStdin(true)
-                    .withAttachStdout(true)
-                    .exec();
+            ExecCreateCmdResponse execCreateCmdResponse = dockerClient.execCreateCmd(containerId).withCmd(command).withAttachStderr(true).withAttachStdin(true).withAttachStdout(true).exec();
             log.info("创建执行命令：" + Arrays.toString(command));
 
             // 执行信息
@@ -357,10 +395,7 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
                 // 开始计时
                 stopWatch.start();
                 // 执行命令
-                dockerClient
-                        .execStartCmd(execId)
-                        .exec(execStartResultCallback)
-                        .awaitCompletion(TIMEOUT, TimeUnit.MILLISECONDS);
+                dockerClient.execStartCmd(execId).exec(execStartResultCallback).awaitCompletion(TIMEOUT, TimeUnit.MILLISECONDS);
                 // 结束计时
                 stopWatch.stop();
                 time = stopWatch.getLastTaskTimeMillis();

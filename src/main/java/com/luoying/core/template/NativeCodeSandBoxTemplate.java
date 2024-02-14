@@ -9,12 +9,9 @@ import com.luoying.model.*;
 import com.luoying.model.enums.JudgeInfoMessagenum;
 import com.luoying.utils.ProcessUtil;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.util.StopWatch;
 
 import java.io.File;
 import java.io.IOException;
-import java.lang.management.ManagementFactory;
-import java.lang.management.MemoryMXBean;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedList;
@@ -71,13 +68,6 @@ public abstract class NativeCodeSandBoxTemplate implements CodeSandBox {
      */
     @Override
     public ExecuteCodeResponse executeCode(ExecuteCodeRequest executeCodeRequest) {
-        // 该计时器用于执行过程中出错时
-        StopWatch watch = new StopWatch();
-        watch.start();
-
-        // 该内存管理对象用于执行过程中出错时
-        MemoryMXBean memoryMXBean = ManagementFactory.getMemoryMXBean();
-        long start = memoryMXBean.getHeapMemoryUsage().getUsed() + memoryMXBean.getNonHeapMemoryUsage().getUsed();
 
         // 用户代码文件、执行代码响应对象的初始化
         File userCodeFile = null;
@@ -94,7 +84,7 @@ public abstract class NativeCodeSandBoxTemplate implements CodeSandBox {
             try {
                 userCodeFile = saveCodeToFile(code);
             } catch (Exception e) {
-                return getSaveCodeErrorResponse(watch, memoryMXBean, JudgeInfoMessagenum.DANGEROUS_OPERATION, start);
+                return getSaveCodeErrorResponse();
             }
 
             // 获取用户代码文件的绝对路径(项目目录/顶级目录/二级目录/UUID/文件名.后缀)
@@ -112,14 +102,14 @@ public abstract class NativeCodeSandBoxTemplate implements CodeSandBox {
             ExecuteMessage compileCodeFileExecuteMessage = compileCode(compileCmd);
             if (compileCodeFileExecuteMessage.getExitValue() != 0) {
                 log.info("编译信息：{}", compileCodeFileExecuteMessage);
-                return getErrorResponse(watch, memoryMXBean, JudgeInfoMessagenum.COMPILE_ERROR, start, compileCodeFileExecuteMessage);
+                return getErrorResponse(compileCodeFileExecuteMessage);
             }
 
             // 3. 执行代码，得到输出结果
             List<ExecuteMessage> executeMessageList = runCode(inputList, runCmd);
             for (ExecuteMessage executeMessage : executeMessageList) {
                 if (executeMessage.getExitValue() != 0) {
-                    return getErrorResponse(watch, memoryMXBean, JudgeInfoMessagenum.RUNTIME_ERROR, start, executeMessage);
+                    return getErrorResponse(executeMessage);
                 }
             }
             // 4. 收集整理输出结果
@@ -136,34 +126,28 @@ public abstract class NativeCodeSandBoxTemplate implements CodeSandBox {
         return executeCodeResponse;
     }
 
-    private ExecuteCodeResponse getErrorResponse(StopWatch watch, MemoryMXBean memoryMXBean, JudgeInfoMessagenum judgeInfoMessagenum, long start, ExecuteMessage executeMessage) {
-        QuestionSubmitJudgeInfo judgeInfo;
-        // 异常，结束计时
-        watch.stop();
-        // 获取出异常时的内存
-        long end = memoryMXBean.getHeapMemoryUsage().getUsed() + memoryMXBean.getNonHeapMemoryUsage().getUsed();
-        // 设置判题信息
-        judgeInfo = new QuestionSubmitJudgeInfo();
-        judgeInfo.setMessage(judgeInfoMessagenum.getValue());
-        judgeInfo.setTime(watch.getLastTaskTimeMillis());
-        judgeInfo.setMemory((double) (end - start) / 1024);
-        // 构造执行代码响应，然后返回
-        return ExecuteCodeResponse.builder().outputList(null).message(executeMessage.getErrorMessage()).judgeInfo(judgeInfo).build();
+    private ExecuteCodeResponse getErrorResponse(ExecuteMessage executeMessage) {
+        QuestionSubmitJudgeInfo judgeInfo = new QuestionSubmitJudgeInfo();
+        judgeInfo.setMessage(executeMessage.getErrorMessage());
+        judgeInfo.setTime(-1L);
+        judgeInfo.setMemory(-1D);
+        return ExecuteCodeResponse.builder()
+                .outputList(null)
+                .message(executeMessage.getErrorMessage())
+                .status(3)
+                .judgeInfo(judgeInfo).build();
     }
 
-    private ExecuteCodeResponse getSaveCodeErrorResponse(StopWatch watch, MemoryMXBean memoryMXBean, JudgeInfoMessagenum judgeInfoMessagenum, long start) {
-        QuestionSubmitJudgeInfo judgeInfo;
-        // 异常，结束计时
-        watch.stop();
-        // 获取出异常时的内存
-        long end = memoryMXBean.getHeapMemoryUsage().getUsed() + memoryMXBean.getNonHeapMemoryUsage().getUsed();
-        // 设置判题信息
-        judgeInfo = new QuestionSubmitJudgeInfo();
-        judgeInfo.setMessage(judgeInfoMessagenum.getValue());
-        judgeInfo.setTime(watch.getLastTaskTimeMillis());
-        judgeInfo.setMemory((double) (end - start) / 1024);
-        // 构造执行代码响应，然后返回
-        return ExecuteCodeResponse.builder().outputList(null).message(judgeInfoMessagenum.getValue()).judgeInfo(judgeInfo).build();
+    private ExecuteCodeResponse getSaveCodeErrorResponse() {
+        QuestionSubmitJudgeInfo judgeInfo = new QuestionSubmitJudgeInfo();
+        judgeInfo.setMessage(JudgeInfoMessagenum.DANGEROUS_OPERATION.getValue());
+        judgeInfo.setTime(-1L);
+        judgeInfo.setMemory(-1D);
+        return ExecuteCodeResponse.builder()
+                .outputList(null)
+                .message(JudgeInfoMessagenum.DANGEROUS_OPERATION.getValue())
+                .status(3)
+                .judgeInfo(judgeInfo).build();
     }
 
 

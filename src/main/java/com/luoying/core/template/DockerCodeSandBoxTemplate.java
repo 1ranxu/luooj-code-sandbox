@@ -23,6 +23,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -114,16 +115,16 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
             // 2. 编译代码
             ExecuteMessage compileCodeFileExecuteMessage = compileCode(compileCmd);
             if (StrUtil.isNotBlank(compileCodeFileExecuteMessage.getErrorMessage())) {
-                log.info(compileCodeFileExecuteMessage.toString());
                 return getCompileCodeErrorResponse(compileCodeFileExecuteMessage);
             }
+            log.info("编译信息:{}", compileCodeFileExecuteMessage);
 
 
             // 3. 执行代码，得到输出结果
             List<ExecuteMessage> executeMessageList = runCodeFile(inputList, runCmd, userCodeFile.getParentFile().getParentFile().getAbsolutePath());
             for (ExecuteMessage executeMessage : executeMessageList) {
+                log.info("运行信息:{}", executeMessage);
                 if (StrUtil.isNotBlank(executeMessage.getErrorMessage())) {
-                    log.info(executeMessage.toString());
                     return getRunCodeErrorResponse(executeMessage);
                 }
             }
@@ -151,11 +152,7 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
         judgeInfo.setMessage(JudgeInfoMessagenum.DANGEROUS_OPERATION.getValue());
         judgeInfo.setTime(-1L);
         judgeInfo.setMemory(-1D);
-        return ExecuteCodeResponse.builder()
-                .outputList(null)
-                .message(JudgeInfoMessagenum.DANGEROUS_OPERATION.getValue())
-                .status(3)
-                .judgeInfo(judgeInfo).build();
+        return ExecuteCodeResponse.builder().outputList(null).message(JudgeInfoMessagenum.DANGEROUS_OPERATION.getValue()).status(3).judgeInfo(judgeInfo).build();
     }
 
     /**
@@ -171,11 +168,7 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
         judgeInfo.setMessage(errormessage);
         judgeInfo.setTime(-1L);
         judgeInfo.setMemory(-1D);
-        return ExecuteCodeResponse.builder()
-                .outputList(null)
-                .message(errormessage)
-                .status(3)
-                .judgeInfo(judgeInfo).build();
+        return ExecuteCodeResponse.builder().outputList(null).message(errormessage).status(3).judgeInfo(judgeInfo).build();
     }
 
     /**
@@ -186,14 +179,8 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
         judgeInfo.setMessage(executeMessage.getErrorMessage());
         judgeInfo.setTime(-1L);
         judgeInfo.setMemory(-1D);
-        return ExecuteCodeResponse.builder()
-                .outputList(null)
-                .message(executeMessage.getErrorMessage())
-                .status(3)
-                .judgeInfo(judgeInfo).build();
+        return ExecuteCodeResponse.builder().outputList(null).message(executeMessage.getErrorMessage()).status(3).judgeInfo(judgeInfo).build();
     }
-
-
 
 
     /**
@@ -257,8 +244,8 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
      * @return {@link List<ExecuteMessage>}
      */
     public List<ExecuteMessage> runCodeFile(List<String> inputList, String runCmd, String secDirPath) {
-        // 1.拉取镜像
         DockerClient dockerClient = DockerClientBuilder.getInstance().build();
+        // 1.拉取镜像
         List<Image> images = dockerClient.listImagesCmd().exec();
         // 判断要拉取的镜像是否已经存在
         boolean isImageExists = images.stream().anyMatch(image -> Arrays.asList(image.getRepoTags()).contains(imageName));
@@ -320,8 +307,64 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
             startContainerCmd.exec();
         }
 
-        // 例子：docker exec code_sandbox sh -c echo 'input' | runCmd
+        CountDownLatch statsLatch = new CountDownLatch(1);
+        // 获取占用的内存
+        final double[] maxMemory = {0L};
+        // 容器状态命令
+        StatsCmd statsCmd = dockerClient.statsCmd(containerId);
+        // 实时获取容器内存的回调函数
+        ResultCallback<Statistics> statisticsResultCallback = statsCmd.exec(new ResultCallback<Statistics>() {
+            @Override
+            public void onNext(Statistics statistics) {
+                // 使用 inspectContainerCmd 获取容器详细信息
+                InspectContainerResponse containerInfo = dockerClient.inspectContainerCmd(containerId).exec();
+                // 获取容器状态
+                String containerStatus = containerInfo.getState().getStatus();
+                // 检查容器是否正在运行
+                if ("running".equalsIgnoreCase(containerStatus)) {
+                    log.info("内存占用：" + statistics.getMemoryStats().getUsage() / 1024);
+                    maxMemory[0] = Math.max(maxMemory[0], statistics.getMemoryStats().getUsage().longValue() / 1024);
+                } else {
+                    log.info("容器状态:{}", containerStatus);
+                }
+            }
+
+            @Override
+            public void onStart(Closeable closeable) {
+
+            }
+
+            @Override
+            public void onError(Throwable throwable) {
+
+            }
+
+            @Override
+            public void onComplete() {
+                try {
+                    // 进入阻塞队列挂起，等待主线程关闭容器后唤醒
+                    statsLatch.await();
+
+                    // 关闭内存统计命令
+                    log.info("关闭内存统计");
+                    statsCmd.close();
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+
+            @Override
+            public void close() throws IOException {
+
+            }
+        });
+
+        // 开始内存统计（Docker容器的守护线程会一直实时获取容器的内存）
+        statsCmd.exec(statisticsResultCallback);
+
+
         // 4.执行命令并获取结果
+        // 例子：docker exec code_sandbox sh -c echo 'input' | runCmd
         List<ExecuteMessage> executeMessageList = new ArrayList<>();
         for (String input : inputList) {
             // 为每个输入用例的执行计时
@@ -349,12 +392,14 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
                 public void onNext(Frame frame) {
                     StreamType streamType = frame.getStreamType();
                     if (StreamType.STDERR.equals(streamType)) {
-                        errorMessage[0] = new String(frame.getPayload(),StandardCharsets.UTF_8);
-                        message[0] = message[0].substring(0, message[0].length() - 1);
+                        errorMessage[0] = new String(frame.getPayload(), StandardCharsets.UTF_8);
+                        errorMessage[0] = errorMessage[0].substring(0, errorMessage[0].length() - 1);
                         log.info("输出错误结果" + errorMessage[0]);
                     } else {
-                        message[0] = new String(frame.getPayload(),StandardCharsets.UTF_8);
-                        message[0] = message[0].substring(0, message[0].length() - 1);// 去掉最后的\n符
+                        message[0] = new String(frame.getPayload(), StandardCharsets.UTF_8);
+                        if (message[0].charAt(message[0].length() - 1) == '\n') {
+                            message[0] = message[0].substring(0, message[0].length() - 1);// 去掉最后的\n符
+                        }
                         log.info("输出结果" + message[0]);
                     }
                     super.onNext(frame);
@@ -366,59 +411,6 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
                     super.onComplete();
                 }
             };
-
-            // 获取占用的内存
-            final double[] maxMemory = {0L};
-            // 容器状态命令
-            StatsCmd statsCmd = dockerClient.statsCmd(containerId);
-            // 实时获取容器内存的回调函数
-            ResultCallback<Statistics> statisticsResultCallback = statsCmd.exec(new ResultCallback<Statistics>() {
-                @Override
-                public void onNext(Statistics statistics) {
-                    // 使用 inspectContainerCmd 获取容器详细信息
-                    InspectContainerResponse containerInfo = dockerClient.inspectContainerCmd(containerId).exec();
-                    // 获取容器状态
-                    String containerStatus = containerInfo.getState().getStatus();
-                    // 检查容器是否正在运行
-                    if ("running".equalsIgnoreCase(containerStatus)) {
-                        log.info("内存占用：" + statistics.getMemoryStats().getUsage() / 1024);
-                        maxMemory[0] = Math.max(maxMemory[0], statistics.getMemoryStats().getUsage().longValue() / 1024);
-                    } else {
-                        log.info("容器未运行");
-                        try {
-                            dockerClient.close();
-                        } catch (IOException e) {
-                            log.info("关闭dockerClient失败");
-                        }
-                        // 关闭内存统计命令
-                        statsCmd.close();
-                    }
-                }
-
-                @Override
-                public void onStart(Closeable closeable) {
-
-                }
-
-                @Override
-                public void onError(Throwable throwable) {
-
-                }
-
-                @Override
-                public void onComplete() {
-
-                }
-
-                @Override
-                public void close() throws IOException {
-
-                }
-            });
-
-            // 开始内存统计（Docker容器的守护线程会一直实时获取容器的内存）
-            statsCmd.exec(statisticsResultCallback);
-
             // 执行命令
             try {
                 // 开始计时
@@ -432,15 +424,29 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
                 log.info("程序执行异常");
                 throw new RuntimeException(e);
             }
+
             // 封装单个用例的执行结果
             executeMessage.setMessage(message[0]);
             executeMessage.setErrorMessage(errorMessage[0]);
             executeMessage.setTime(time);
+            log.info("单个用例的内存消耗:{}", maxMemory[0]);
             executeMessage.setMemory(maxMemory[0]);
             executeMessageList.add(executeMessage);
         }
+
+        // 唤醒阻塞队列所有线程
+        statsLatch.countDown();
+
         // 执行完所有输入用例后关闭容器
         dockerClient.stopContainerCmd(containerId).exec();
+
+        // 关闭dockerClient
+        try {
+            dockerClient.close();
+        } catch (IOException e) {
+            log.info("dockerClient关闭失败");
+        }
+
         // 返回
         return executeMessageList;
     }

@@ -16,6 +16,7 @@ import com.luoying.core.CodeSandBox;
 import com.luoying.model.*;
 import com.luoying.model.enums.JudgeInfoMessagenum;
 import com.luoying.utils.ProcessUtil;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.Closeable;
@@ -48,7 +49,7 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
     String containerName;
 
     // 超时时间 ms
-    private static final long TIMEOUT = 5000L;
+    private static final long TIMEOUT = 15000L;
 
     // 字典树
     private static final WordTree WORD_TREE;
@@ -243,7 +244,7 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
      * @param secDirPath 二级目录
      * @return {@link List<ExecuteMessage>}
      */
-    public List<ExecuteMessage> runCodeFile(List<String> inputList, String runCmd, String secDirPath) {
+    public List<ExecuteMessage> runCodeFile(List<String> inputList, String runCmd, String secDirPath) throws InterruptedException {
         DockerClient dockerClient = DockerClientBuilder.getInstance().build();
         // 1.拉取镜像
         List<Image> images = dockerClient.listImagesCmd().exec();
@@ -310,20 +311,24 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
         CountDownLatch statsLatch = new CountDownLatch(1);
         // 获取占用的内存
         final double[] maxMemory = {0L};
+        final double[] minMemory = {Long.MAX_VALUE};
         // 容器状态命令
         StatsCmd statsCmd = dockerClient.statsCmd(containerId);
         // 实时获取容器内存的回调函数
         ResultCallback<Statistics> statisticsResultCallback = statsCmd.exec(new ResultCallback<Statistics>() {
+            @SneakyThrows
             @Override
             public void onNext(Statistics statistics) {
                 // 使用 inspectContainerCmd 获取容器详细信息
                 InspectContainerResponse containerInfo = dockerClient.inspectContainerCmd(containerId).exec();
                 // 获取容器状态
                 String containerStatus = containerInfo.getState().getStatus();
-                // 检查容器是否正在运行
                 if ("running".equalsIgnoreCase(containerStatus)) {
-                    log.info("内存占用：" + statistics.getMemoryStats().getUsage() / 1024);
-                    maxMemory[0] = Math.max(maxMemory[0], statistics.getMemoryStats().getUsage().longValue() / 1024);
+                    Long maxUsage = statistics.getMemoryStats().getMaxUsage();
+                    log.info("内存占用：" + maxUsage / 1024);
+                    maxMemory[0] = Math.max(maxMemory[0], maxUsage / 1024);
+                    minMemory[0] = Math.min(minMemory[0], maxUsage / 1024);
+                    log.info("maxUsage: {},  maxMemory: {},  minMemory: {}", maxUsage, maxMemory[0], minMemory[0]);
                 } else {
                     log.info("容器状态:{}", containerStatus);
                 }
@@ -344,7 +349,6 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
                 try {
                     // 进入阻塞队列挂起，等待主线程关闭容器后唤醒
                     statsLatch.await();
-
                     // 关闭内存统计命令
                     log.info("关闭内存统计");
                     statsCmd.close();
@@ -362,6 +366,7 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
         // 开始内存统计（Docker容器的守护线程会一直实时获取容器的内存）
         statsCmd.exec(statisticsResultCallback);
 
+        Thread.sleep(1000);
 
         // 4.执行命令并获取结果
         // 例子：docker exec code_sandbox sh -c echo 'input' | runCmd
@@ -374,12 +379,11 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
             String[] command = {"sh", "-c", "echo " + input + " | " + runCmd};
             ExecCreateCmdResponse execCreateCmdResponse = dockerClient.execCreateCmd(containerId).withCmd(command).withAttachStderr(true).withAttachStdin(true).withAttachStdout(true).exec();
             log.info("创建执行命令：" + Arrays.toString(command));
-
+            Thread.sleep(100);
             // 执行信息
             ExecuteMessage executeMessage = new ExecuteMessage();
             final String[] message = {null};
             final String[] errorMessage = {null};
-
             // 每个输入用例的执行时间
             long time = 0L;
             // 判断是否超时
@@ -420,6 +424,7 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
                 // 结束计时
                 stopWatch.stop();
                 time = stopWatch.getLastTaskTimeMillis();
+                Thread.sleep(1000);
             } catch (Exception e) {
                 log.info("程序执行异常");
                 throw new RuntimeException(e);
@@ -429,8 +434,8 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
             executeMessage.setMessage(message[0]);
             executeMessage.setErrorMessage(errorMessage[0]);
             executeMessage.setTime(time);
-            log.info("单个用例的内存消耗:{}", maxMemory[0]);
-            executeMessage.setMemory(maxMemory[0]);
+            log.info("单个用例的内存消耗:{}", maxMemory[0] - minMemory[0]);
+            executeMessage.setMemory(maxMemory[0] - minMemory[0]);
             executeMessageList.add(executeMessage);
         }
 

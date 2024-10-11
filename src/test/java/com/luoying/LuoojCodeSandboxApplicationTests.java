@@ -8,14 +8,19 @@ import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 
+import javax.annotation.Resource;
 import java.lang.management.*;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.ThreadPoolExecutor;
 
 @SpringBootTest
 @Slf4j
 class LuoojCodeSandboxApplicationTests {
+
+    @Resource
+    private ThreadPoolExecutor threadPoolExecutor;
 
     @Test
     void testMemoryMXBean() {
@@ -276,6 +281,13 @@ class LuoojCodeSandboxApplicationTests {
         }
         Object[] cmdArray = cmdList.toArray();
         log.info("创建执行命令：" + Arrays.toString(cmdArray));
+    }
+
+    @Test
+    void test9(){
+        System.out.println(threadPoolExecutor);
+        System.out.println(threadPoolExecutor.getCorePoolSize());
+        System.out.println(threadPoolExecutor.getMaximumPoolSize());
     }
 
 }

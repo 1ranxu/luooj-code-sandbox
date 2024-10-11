@@ -7,11 +7,15 @@ import cn.hutool.dfa.FoundWord;
 import cn.hutool.dfa.WordTree;
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.async.ResultCallback;
-import com.github.dockerjava.api.command.*;
-import com.github.dockerjava.api.model.*;
+import com.github.dockerjava.api.command.ExecCreateCmdResponse;
+import com.github.dockerjava.api.command.InspectContainerResponse;
+import com.github.dockerjava.api.command.StatsCmd;
+import com.github.dockerjava.api.model.Container;
+import com.github.dockerjava.api.model.Frame;
+import com.github.dockerjava.api.model.Statistics;
+import com.github.dockerjava.api.model.StreamType;
 import com.github.dockerjava.core.DockerClientBuilder;
 import com.github.dockerjava.core.command.ExecStartResultCallback;
-import com.github.dockerjava.core.command.PullImageResultCallback;
 import com.luoying.core.CodeSandBox;
 import com.luoying.model.*;
 import com.luoying.model.enums.JudgeInfoMessagenum;
@@ -34,21 +38,12 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
     // 顶级目录（相对于当前项目）
-    String topDirPath;
-
-    // 二级目录（用于区分编程语言）（相对于当前项目）
-    String secDirPath;
+    public static final String topDirPath = "tempCode";
 
     // 代码文件名
     String codeFileName;
 
-    // 镜像名称
-    String imageName;
-
-    // 容器名称
-    String containerName;
-
-    // 超时时间 ms
+    // 最大超时时间 ms
     private static final long TIMEOUT = 15000L;
 
     // 字典树
@@ -60,12 +55,8 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
     }
 
 
-    protected DockerCodeSandBoxTemplate(String topDirPath, String secDirPath, String codeFileName, String imageName, String containerName) {
-        this.topDirPath = topDirPath;
-        this.secDirPath = secDirPath;
+    protected DockerCodeSandBoxTemplate(String codeFileName) {
         this.codeFileName = codeFileName;
-        this.imageName = imageName;
-        this.containerName = containerName;
     }
 
     /**
@@ -76,7 +67,6 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
      * @return {@link CodeSandBoxCmd}
      */
     protected abstract CodeSandBoxCmd getCmd(String userCodeParentDirName, String userCodePath);
-
 
     /**
      * 执行代码
@@ -186,7 +176,7 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
 
     /**
      * 1. 保存用户代码到文件中
-     * 文件中的路径应为: tempCode/language/UUID/代码文件
+     * 文件中的路径应为: tempCode/UUID/代码文件
      *
      * @param code 代码
      * @return {@link File}
@@ -207,10 +197,10 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
             FileUtil.mkdir(topDir);
         }
 
-        // 构建 项目目录/顶级目录/二级目录/UUID (通过secDirPath区分不同语言)
-        String userCodeParentPath = topDir + File.separator + secDirPath + File.separator + UUID.randomUUID();
+        // 构建 项目目录/顶级目录/UUID
+        String userCodeParentPath = topDir + File.separator + UUID.randomUUID();
 
-        // 构建 项目目录/顶级目录/二级目录/UUID/文件名.后缀 (用户代码文件路径)
+        // 构建 项目目录/顶级目录/UUID/文件名.后缀 (用户代码文件路径)
         String userCodePath = userCodeParentPath + File.separator + codeFileName;
 
         // 保存
@@ -227,7 +217,6 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
         try {
             // 获取编译的Process
             Process compileProcess = Runtime.getRuntime().exec(compileCmd);
-
             // 返回编译结果
             return ProcessUtil.runProcessAndGetMessage(compileProcess, "编译");
         } catch (Exception e) {
@@ -246,67 +235,20 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
      */
     public List<ExecuteMessage> runCodeFile(List<String> inputList, String runCmd, String secDirPath) throws InterruptedException {
         DockerClient dockerClient = DockerClientBuilder.getInstance().build();
-        // 1.拉取镜像
-        List<Image> images = dockerClient.listImagesCmd().exec();
-        // 判断要拉取的镜像是否已经存在
-        boolean isImageExists = images.stream().anyMatch(image -> Arrays.asList(image.getRepoTags()).contains(imageName));
-        if (!isImageExists) {// 不存在
-            // 获取拉取镜像命令
-            PullImageCmd pullImageCmd = dockerClient.pullImageCmd(imageName);
-            // 拉取镜像回调函数（用于查看拉取镜像的状态）
-            PullImageResultCallback pullImageResultCallback = new PullImageResultCallback() {
-                @Override
-                public void onNext(PullResponseItem item) {
-                    log.info("下载镜像状态：" + item.getStatus());
-                    super.onNext(item);
-                }
-            };
-            // 执行拉取镜像命令
-            try {
-                pullImageCmd.exec(pullImageResultCallback).awaitCompletion();
-            } catch (InterruptedException e) {
-                log.error("拉取镜像异常");
-            }
-            log.info("下载完成");
-        }
-
-        // 2.创建容器
+        // 1.启动容器
         // 获取所有容器（包括未启动的）
         List<Container> containers = dockerClient.listContainersCmd().withShowAll(true).exec();
-        // 根据名称判断容器是否存在（容器的实际名称：/自定义名称）
-        Optional<Container> containerOptional = containers.stream().filter(container -> Arrays.asList(container.getNames()).contains("/" + containerName)).findFirst();
+        // 根据线程名称判断容器是否存在（容器的实际名称：/自定义名称）
+        Optional<Container> containerOptional = containers.stream().filter(container -> Arrays.asList(container.getNames()).contains("/" + Thread.currentThread().getName())).findFirst();
         String containerId;
-        if (containerOptional.isPresent()) {// 存在
-            // 获取容器
-            Container container = containerOptional.get();
-            // 判断容器是否启动，未启动则手动启动
-            if (!"running".equals(container.getState())) {
-                dockerClient.startContainerCmd(container.getId()).exec();
-            }
-            // 记录容器id
-            containerId = container.getId();
-        } else {// 容器不存在
-            // 构建创建容器命令
-            CreateContainerCmd containerCmd = dockerClient.createContainerCmd(imageName).withName(containerName);
-            HostConfig hostConfig = new HostConfig();
-            // 把 项目目录/顶级目录/二级目录 挂载到 容器内的目录
-            hostConfig.setBinds(new Bind(secDirPath, new Volume("/app")));
-            // 限制最大内存 100M
-            hostConfig.withMemory(100 * 1000 * 1000L);
-            // 不让内存往硬盘写
-            hostConfig.withMemorySwap(0L);
-            // cpu核心1个
-            hostConfig.withCpuCount(1L);
-            // hostConfig.withSecurityOpts(Arrays.asList("seccomp=安全管理配置字符串"));
-            // 创建容器
-            CreateContainerResponse createContainerResponse = containerCmd.withReadonlyRootfs(true).withNetworkDisabled(true).withHostConfig(hostConfig).withAttachStdin(true).withAttachStdout(true).withAttachStderr(true).withTty(true).exec();
-            log.info("创建容器响应=>{}", createContainerResponse.toString());
-            // 记录容器id
-            containerId = createContainerResponse.getId();
-            // 3.启动容器
-            StartContainerCmd startContainerCmd = dockerClient.startContainerCmd(containerId);
-            startContainerCmd.exec();
+        // 获取容器
+        Container container = containerOptional.get();
+        // 判断容器是否启动，未启动则手动启动
+        if (!"running".equals(container.getState())) {
+            dockerClient.startContainerCmd(container.getId()).exec();
         }
+        // 记录容器id
+        containerId = container.getId();
 
         CountDownLatch statsLatch = new CountDownLatch(1);
         // 获取占用的内存

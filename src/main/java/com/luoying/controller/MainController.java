@@ -9,8 +9,12 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
+import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import java.util.concurrent.Callable;
+import java.util.concurrent.Future;
+import java.util.concurrent.ThreadPoolExecutor;
 
 /**
  * @author 落樱的悔恨
@@ -21,6 +25,9 @@ public class MainController {
     // 定义鉴权请求头和密钥
     private static final String AUTH_REQUEST_HEADER = "auth";
     private static final String AUTH_REQUEST_SECRET = "secretKey";
+
+    @Resource
+    private ThreadPoolExecutor threadPoolExecutor;
 
 
     /**
@@ -44,14 +51,19 @@ public class MainController {
             throw new RuntimeException("请求参数为空");
         }
         // 根据编程语言获取对应的代码沙箱
-        /*// 原生代码沙箱
-        NativeCodeSandBoxTemplate codeSandBoxTemplate = NativeCodeSandboxFactory
+        // 原生代码沙箱
+        /*NativeCodeSandBoxTemplate codeSandBoxTemplate = NativeCodeSandboxFactory
                 .getInstance(QuestionSubmitLanguageEnum.getEnumByValue(executeCodeRequest.getLanguage()));*/
         // Docker代码沙箱
-        DockerCodeSandBoxTemplate codeSandBoxTemplate = DockerCodeSandboxFactory
-                .getInstance(QuestionSubmitLanguageEnum.getEnumByValue(executeCodeRequest.getLanguage()));
+        DockerCodeSandBoxTemplate codeSandBoxTemplate = DockerCodeSandboxFactory.getInstance(QuestionSubmitLanguageEnum.getEnumByValue(executeCodeRequest.getLanguage()));
 
         // 执行代码
-        return codeSandBoxTemplate.executeCode(executeCodeRequest);
+        Callable<ExecuteCodeResponse> callable = () -> codeSandBoxTemplate.executeCode(executeCodeRequest);
+        Future<ExecuteCodeResponse> future = threadPoolExecutor.submit(callable);
+        try {
+            return future.get();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 }

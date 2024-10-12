@@ -43,7 +43,6 @@ public class ContainerInit {
         // 1.创建容器
         // 获取所有容器（包括未启动的）
         List<Container> containers = dockerClient.listContainersCmd().withShowAll(true).exec();
-
         for (int i = 1; i <= containerNum; i++) {
             int x = i;
             // 根据名称判断容器是否存在（容器的实际名称：/自定义名称）

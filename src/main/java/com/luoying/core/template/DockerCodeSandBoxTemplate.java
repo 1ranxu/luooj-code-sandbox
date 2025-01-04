@@ -92,7 +92,7 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
                 return getSaveCodeErrorResponse();
             }
 
-            // 获取用户代码文件的绝对路径(项目目录/顶级目录/二级目录/UUID/文件名.后缀)
+            // 获取用户代码文件的绝对路径(项目目录/顶级目录/UUID/文件名.后缀)
             String userCodePath = userCodeFile.getAbsolutePath();
 
             // 获取用户代码文件父目录的名称
@@ -103,13 +103,14 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
             String compileCmd = sandBoxCmd.getCompileCmd();
             String runCmd = sandBoxCmd.getRunCmd();
 
-            // 2. 编译代码
-            ExecuteMessage compileCodeFileExecuteMessage = compileCode(compileCmd);
-            if (StrUtil.isNotBlank(compileCodeFileExecuteMessage.getErrorMessage())) {
-                return getCompileCodeErrorResponse(compileCodeFileExecuteMessage);
+            if(compileCmd != null){ // 有些语言不需要编译
+                // 2. 编译代码
+                ExecuteMessage compileCodeFileExecuteMessage = compileCode(compileCmd);
+                if (StrUtil.isNotBlank(compileCodeFileExecuteMessage.getErrorMessage())) {
+                    return getCompileCodeErrorResponse(compileCodeFileExecuteMessage);
+                }
+                log.info("编译信息:{}", compileCodeFileExecuteMessage);
             }
-            log.info("编译信息:{}", compileCodeFileExecuteMessage);
-
 
             // 3. 执行代码，得到输出结果
             List<ExecuteMessage> executeMessageList = runCodeFile(inputList, runCmd, userCodeFile.getParentFile().getParentFile().getAbsolutePath());

@@ -51,10 +51,10 @@ public class ContainerInit {
                 // 构建创建容器命令
                 CreateContainerCmd containerCmd = dockerClient.createContainerCmd(imageName).withName(containerName + x);
                 HostConfig hostConfig = new HostConfig();
-                // 把 项目目录/顶级目录/二级目录 挂载到 容器内的目录
+                // 把 项目目录/顶级目录 挂载到 容器内的目录
                 hostConfig.setBinds(new Bind(topDir, new Volume("/app")));
                 // 限制最大内存 100M
-                hostConfig.withMemory(128 * 1000 * 1000L);
+                hostConfig.withMemory(128 * 1024 * 1024L);
                 // 不让内存往硬盘写
                 hostConfig.withMemorySwap(0L);
                 // cpu核心1个

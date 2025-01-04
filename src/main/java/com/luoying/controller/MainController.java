@@ -1,7 +1,9 @@
 package com.luoying.controller;
 
 import com.luoying.core.docker.DockerCodeSandboxFactory;
+import com.luoying.core.nativ.NativeCodeSandboxFactory;
 import com.luoying.core.template.DockerCodeSandBoxTemplate;
+import com.luoying.core.template.NativeCodeSandBoxTemplate;
 import com.luoying.model.ExecuteCodeRequest;
 import com.luoying.model.ExecuteCodeResponse;
 import com.luoying.model.enums.QuestionSubmitLanguageEnum;
@@ -53,10 +55,10 @@ public class MainController {
         // 根据编程语言获取对应的代码沙箱
         // 原生代码沙箱
         /*NativeCodeSandBoxTemplate codeSandBoxTemplate = NativeCodeSandboxFactory
-                .getInstance(QuestionSubmitLanguageEnum.getEnumByValue(executeCodeRequest.getLanguage()));*/
+                .getInstance(QuestionSubmitLanguageEnum.getEnumByValue(executeCodeRequest.getLanguage()));
+        return codeSandBoxTemplate.executeCode(executeCodeRequest);*/
         // Docker代码沙箱
         DockerCodeSandBoxTemplate codeSandBoxTemplate = DockerCodeSandboxFactory.getInstance(QuestionSubmitLanguageEnum.getEnumByValue(executeCodeRequest.getLanguage()));
-
         // 执行代码
         Callable<ExecuteCodeResponse> callable = () -> codeSandBoxTemplate.executeCode(executeCodeRequest);
         Future<ExecuteCodeResponse> future = threadPoolExecutor.submit(callable);

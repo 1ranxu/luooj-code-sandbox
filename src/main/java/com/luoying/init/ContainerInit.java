@@ -53,7 +53,7 @@ public class ContainerInit {
                 HostConfig hostConfig = new HostConfig();
                 // 把 项目目录/顶级目录 挂载到 容器内的目录
                 hostConfig.setBinds(new Bind(topDir, new Volume("/app")));
-                // 限制最大内存 100M
+                // 限制最大内存 128M
                 hostConfig.withMemory(128 * 1024 * 1024L);
                 // 不让内存往硬盘写
                 hostConfig.withMemorySwap(0L);

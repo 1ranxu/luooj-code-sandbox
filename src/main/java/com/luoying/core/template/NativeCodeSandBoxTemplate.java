@@ -133,7 +133,7 @@ public abstract class NativeCodeSandBoxTemplate implements CodeSandBox {
         QuestionSubmitJudgeInfo judgeInfo = new QuestionSubmitJudgeInfo();
         judgeInfo.setMessage(JudgeInfoMessagenum.DANGEROUS_OPERATION.getValue());
         judgeInfo.setTime(-1L);
-        judgeInfo.setMemory(-1D);
+        judgeInfo.setMemory(-1L);
         return ExecuteCodeResponse.builder()
                 .outputList(null)
                 .message(JudgeInfoMessagenum.DANGEROUS_OPERATION.getValue())
@@ -153,7 +153,7 @@ public abstract class NativeCodeSandBoxTemplate implements CodeSandBox {
         QuestionSubmitJudgeInfo judgeInfo = new QuestionSubmitJudgeInfo();
         judgeInfo.setMessage(errormessage);
         judgeInfo.setTime(-1L);
-        judgeInfo.setMemory(-1D);
+        judgeInfo.setMemory(-1L);
         return ExecuteCodeResponse.builder()
                 .outputList(null)
                 .message(errormessage)
@@ -168,7 +168,7 @@ public abstract class NativeCodeSandBoxTemplate implements CodeSandBox {
         QuestionSubmitJudgeInfo judgeInfo = new QuestionSubmitJudgeInfo();
         judgeInfo.setMessage(executeMessage.getErrorMessage());
         judgeInfo.setTime(-1L);
-        judgeInfo.setMemory(-1D);
+        judgeInfo.setMemory(-1L);
         return ExecuteCodeResponse.builder()
                 .outputList(null)
                 .message(executeMessage.getErrorMessage())
@@ -286,7 +286,7 @@ public abstract class NativeCodeSandBoxTemplate implements CodeSandBox {
         // 所有输入用例中某个用例执行时长的最大值，可以用于判断是否超时
         long maxTime = 0;
         // 所有输入用例中某个用例消耗内存的最大值
-        double maxMemory = 0;
+        long maxMemory = 0;
 
         for (ExecuteMessage executeMessage : executeMessageList) {
             // 获取错误信息
@@ -308,7 +308,7 @@ public abstract class NativeCodeSandBoxTemplate implements CodeSandBox {
                 maxTime = Math.max(maxTime, time);
             }
             // 获取内存
-            Double memory = executeMessage.getMemory();
+            Long memory = executeMessage.getMemory();
             if (memory != null) {
                 maxMemory = Math.max(maxMemory, memory);
             }

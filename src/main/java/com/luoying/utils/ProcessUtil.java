@@ -83,7 +83,7 @@ public class ProcessUtil {
             // 设置时间
             executeMessage.setTime(watch.getLastTaskTimeMillis());
             // 设置内存
-            executeMessage.setMemory((double) (end - start) / 1024);
+            executeMessage.setMemory( (end - start) / 1024);
         } catch (Exception e) {
             throw new RuntimeException(opName + "错误：" + e);
         }

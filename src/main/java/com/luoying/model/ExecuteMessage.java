@@ -31,5 +31,5 @@ public class ExecuteMessage {
     /**
      * 消耗内存 KB
      */
-    private Double memory;
+    private Long memory;
 }

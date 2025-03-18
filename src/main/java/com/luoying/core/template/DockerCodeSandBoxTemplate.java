@@ -17,6 +17,8 @@ import com.github.dockerjava.api.model.StreamType;
 import com.github.dockerjava.core.DockerClientBuilder;
 import com.github.dockerjava.core.command.ExecStartResultCallback;
 import com.luoying.core.CodeSandBox;
+import com.luoying.exception.MemoryLimitExceededException;
+import com.luoying.exception.TimeLimitExceededException;
 import com.luoying.model.*;
 import com.luoying.model.enums.JudgeInfoMessagenum;
 import com.luoying.utils.ProcessUtil;
@@ -31,6 +33,8 @@ import java.util.*;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
+import static com.luoying.model.enums.JudgeInfoMessagenum.*;
+
 /**
  * @author 落樱的悔恨
  * Docker 代码沙箱模板
@@ -44,7 +48,10 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
     String codeFileName;
 
     // 最大超时时间 ms
-    private static final long TIMEOUT = 15000L;
+    private static final long TIMEOUT = 2000L;
+
+    // 最大内存 K
+    private static final long MEMORYOUT = 120000L;
 
     // 字典树
     private static final WordTree WORD_TREE;
@@ -103,7 +110,7 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
             String compileCmd = sandBoxCmd.getCompileCmd();
             String runCmd = sandBoxCmd.getRunCmd();
 
-            if(compileCmd != null){ // 有些语言不需要编译
+            if (compileCmd != null) { // 有些语言不需要编译
                 // 2. 编译代码
                 ExecuteMessage compileCodeFileExecuteMessage = compileCode(compileCmd);
                 if (StrUtil.isNotBlank(compileCodeFileExecuteMessage.getErrorMessage())) {
@@ -113,7 +120,14 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
             }
 
             // 3. 执行代码，得到输出结果
-            List<ExecuteMessage> executeMessageList = runCodeFile(inputList, runCmd, userCodeFile.getParentFile().getParentFile().getAbsolutePath());
+            List<ExecuteMessage> executeMessageList = null;
+            try {
+                executeMessageList = runCodeFile(inputList, runCmd, userCodeFile.getParentFile().getParentFile().getAbsolutePath());
+            } catch (TimeLimitExceededException e) {
+                return getTimeExceededErrorResponse(Long.valueOf(e.getMessage()));
+            } catch (MemoryLimitExceededException e) {
+                return getMemoryExceededErrorResponse((Long.valueOf(e.getMessage())));
+            }
             for (ExecuteMessage executeMessage : executeMessageList) {
                 log.info("运行信息:{}", executeMessage);
                 if (StrUtil.isNotBlank(executeMessage.getErrorMessage())) {
@@ -143,7 +157,7 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
         QuestionSubmitJudgeInfo judgeInfo = new QuestionSubmitJudgeInfo();
         judgeInfo.setMessage(JudgeInfoMessagenum.DANGEROUS_OPERATION.getValue());
         judgeInfo.setTime(-1L);
-        judgeInfo.setMemory(-1D);
+        judgeInfo.setMemory(-1L);
         return ExecuteCodeResponse.builder().outputList(null).message(JudgeInfoMessagenum.DANGEROUS_OPERATION.getValue()).status(3).judgeInfo(judgeInfo).build();
     }
 
@@ -153,14 +167,13 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
     private ExecuteCodeResponse getCompileCodeErrorResponse(ExecuteMessage executeMessage) {
         int index = executeMessage.getErrorMessage().indexOf(codeFileName, 0);
         String userCodeParentPath = executeMessage.getErrorMessage().substring(0, index);
-        log.info(userCodeParentPath);
         // 去除错误信息中的系统路径
         String errormessage = executeMessage.getErrorMessage().replace(userCodeParentPath, "");
         QuestionSubmitJudgeInfo judgeInfo = new QuestionSubmitJudgeInfo();
         judgeInfo.setMessage(errormessage);
         judgeInfo.setTime(-1L);
-        judgeInfo.setMemory(-1D);
-        return ExecuteCodeResponse.builder().outputList(null).message(errormessage).status(3).judgeInfo(judgeInfo).build();
+        judgeInfo.setMemory(-1L);
+        return ExecuteCodeResponse.builder().outputList(null).message(COMPILE_ERROR.getValue()).status(3).judgeInfo(judgeInfo).build();
     }
 
     /**
@@ -170,8 +183,30 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
         QuestionSubmitJudgeInfo judgeInfo = new QuestionSubmitJudgeInfo();
         judgeInfo.setMessage(executeMessage.getErrorMessage());
         judgeInfo.setTime(-1L);
-        judgeInfo.setMemory(-1D);
-        return ExecuteCodeResponse.builder().outputList(null).message(executeMessage.getErrorMessage()).status(3).judgeInfo(judgeInfo).build();
+        judgeInfo.setMemory(-1L);
+        return ExecuteCodeResponse.builder().outputList(null).message(RUNTIME_ERROR.getValue()).status(3).judgeInfo(judgeInfo).build();
+    }
+
+    /**
+     * 获取执行代码响应（时间超限）
+     */
+    private ExecuteCodeResponse getTimeExceededErrorResponse(long time) {
+        QuestionSubmitJudgeInfo judgeInfo = new QuestionSubmitJudgeInfo();
+        judgeInfo.setMessage(TIME_LIMIT_EXCEEDED.getValue());
+        judgeInfo.setTime(time);
+        judgeInfo.setMemory(-1L);
+        return ExecuteCodeResponse.builder().outputList(null).message(TIME_LIMIT_EXCEEDED.getValue()).status(3).judgeInfo(judgeInfo).build();
+    }
+
+    /**
+     * 获取执行代码响应（内存超限）
+     */
+    private ExecuteCodeResponse getMemoryExceededErrorResponse(long memory) {
+        QuestionSubmitJudgeInfo judgeInfo = new QuestionSubmitJudgeInfo();
+        judgeInfo.setMessage(MEMORY_LIMIT_EXCEEDED.getValue());
+        judgeInfo.setTime(-1L);
+        judgeInfo.setMemory(memory);
+        return ExecuteCodeResponse.builder().outputList(null).message(MEMORY_LIMIT_EXCEEDED.getValue()).status(3).judgeInfo(judgeInfo).build();
     }
 
 
@@ -234,7 +269,7 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
      * @param secDirPath 二级目录
      * @return {@link List<ExecuteMessage>}
      */
-    public List<ExecuteMessage> runCodeFile(List<String> inputList, String runCmd, String secDirPath) throws InterruptedException {
+    public List<ExecuteMessage> runCodeFile(List<String> inputList, String runCmd, String secDirPath) throws InterruptedException, IOException {
         DockerClient dockerClient = DockerClientBuilder.getInstance().build();
         // 1.启动容器
         // 获取所有容器（包括未启动的）
@@ -253,8 +288,8 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
 
         CountDownLatch statsLatch = new CountDownLatch(1);
         // 获取占用的内存
-        final double[] maxMemory = {0L};
-        final double[] minMemory = {Long.MAX_VALUE};
+        final long[] maxMemory = {0L};
+        final long[] minMemory = {Long.MAX_VALUE};
         // 容器状态命令
         StatsCmd statsCmd = dockerClient.statsCmd(containerId);
         // 实时获取容器内存的回调函数
@@ -284,7 +319,7 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
 
             @Override
             public void onError(Throwable throwable) {
-
+                log.info("内存统计异常:{}", throwable.getMessage());
             }
 
             @Override
@@ -308,9 +343,6 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
 
         // 开始内存统计（Docker容器的守护线程会一直实时获取容器的内存）
         statsCmd.exec(statisticsResultCallback);
-
-        Thread.sleep(1000);
-
         // 4.执行命令并获取结果
         // 例子：docker exec code_sandbox sh -c echo 'input' | runCmd
         List<ExecuteMessage> executeMessageList = new ArrayList<>();
@@ -322,7 +354,6 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
             String[] command = {"sh", "-c", "echo " + input + " | " + runCmd};
             ExecCreateCmdResponse execCreateCmdResponse = dockerClient.execCreateCmd(containerId).withCmd(command).withAttachStderr(true).withAttachStdin(true).withAttachStdout(true).exec();
             log.info("创建执行命令：" + Arrays.toString(command));
-            Thread.sleep(100);
             // 执行信息
             ExecuteMessage executeMessage = new ExecuteMessage();
             final String[] message = {null};
@@ -360,6 +391,7 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
             };
             // 执行命令
             try {
+                Thread.sleep(100);
                 // 开始计时
                 stopWatch.start();
                 // 执行命令
@@ -367,10 +399,32 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
                 // 结束计时
                 stopWatch.stop();
                 time = stopWatch.getLastTaskTimeMillis();
-                Thread.sleep(1000);
-            } catch (Exception e) {
-                log.info("程序执行异常");
-                throw new RuntimeException(e);
+                if (time >= TIMEOUT) {
+                    log.info("超时{}", time);
+                    throw new TimeLimitExceededException(TIME_LIMIT_EXCEEDED.getValue());
+                }
+                if (maxMemory[0] - minMemory[0] >= MEMORYOUT) {
+                    log.info("溢出");
+                    throw new MemoryLimitExceededException(MEMORY_LIMIT_EXCEEDED.getValue());
+                }
+            } catch (TimeLimitExceededException e) {
+                log.info("程序执行超时");
+                // 唤醒阻塞队列所有线程
+                statsLatch.countDown();
+                // 执行完所有输入用例后关闭容器
+                dockerClient.stopContainerCmd(containerId).exec();
+                // 关闭dockerClient
+                dockerClient.close();
+                throw new TimeLimitExceededException(String.valueOf(time));
+            } catch (MemoryLimitExceededException e) {
+                log.info("程序内存溢出");
+                // 唤醒阻塞队列所有线程
+                statsLatch.countDown();
+                // 执行完所有输入用例后关闭容器
+                dockerClient.stopContainerCmd(containerId).exec();
+                // 关闭dockerClient
+                dockerClient.close();
+                throw new MemoryLimitExceededException(String.valueOf(maxMemory[0] - minMemory[0]));
             }
 
             // 封装单个用例的执行结果
@@ -413,20 +467,9 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
         // 所有输入用例中某个用例执行时长的最大值，可以用于判断是否超时
         long maxTime = 0;
         // 所有输入用例中某个用例消耗内存的最大值
-        double maxMemory = 0;
+        long maxMemory = 0;
 
         for (ExecuteMessage executeMessage : executeMessageList) {
-            // 获取错误信息
-            String errorMessage = executeMessage.getErrorMessage();
-            if (StrUtil.isNotBlank(errorMessage)) {// 如果ExecuteMessage的属性ErrorMessage不为空。则执行中存在错误
-                // 构造ExecuteCodeResponse
-                executeCodeResponse.setOutputList(null);
-                executeCodeResponse.setMessage(errorMessage);
-                executeCodeResponse.setStatus(3);
-                executeCodeResponse.setJudgeInfo(null);
-                // 跳出循环
-                break;
-            }
             // 把正常输出添加到outputList
             outputList.add((executeMessage.getMessage()));
             // 获取时间
@@ -435,7 +478,7 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
                 maxTime = Math.max(maxTime, time);
             }
             // 获取内存
-            Double memory = executeMessage.getMemory();
+            Long memory = executeMessage.getMemory();
             if (memory != null) {
                 maxMemory = Math.max(maxMemory, memory);
             }

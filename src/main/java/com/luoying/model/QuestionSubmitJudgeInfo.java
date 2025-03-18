@@ -16,7 +16,7 @@ public class QuestionSubmitJudgeInfo {
     /**
      * 内存消耗 KB
      */
-    private Double memory;
+    private Long memory;
 
     /**
      * 时间消耗 ms

@@ -346,6 +346,7 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
         // 4.执行命令并获取结果
         // 例子：docker exec code_sandbox sh -c echo 'input' | runCmd
         List<ExecuteMessage> executeMessageList = new ArrayList<>();
+        int size = inputList.size();
         for (String input : inputList) {
             // 为每个输入用例的执行计时
             StopWatch stopWatch = new StopWatch();
@@ -356,8 +357,8 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
             log.info("创建执行命令：" + Arrays.toString(command));
             // 执行信息
             ExecuteMessage executeMessage = new ExecuteMessage();
-            final String[] message = {null};
-            final String[] errorMessage = {null};
+            final String[] message = {""};
+            final String[] errorMessage = {""};
             // 每个输入用例的执行时间
             long time = 0L;
             // 判断是否超时
@@ -370,15 +371,14 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
                 public void onNext(Frame frame) {
                     StreamType streamType = frame.getStreamType();
                     if (StreamType.STDERR.equals(streamType)) {
-                        errorMessage[0] = new String(frame.getPayload(), StandardCharsets.UTF_8);
-                        errorMessage[0] = errorMessage[0].substring(0, errorMessage[0].length() - 1);
-                        log.info("输出错误结果" + errorMessage[0]);
+                        errorMessage[0] += new String(frame.getPayload(), StandardCharsets.UTF_8);
+                        log.info("输出错误结果:{}", errorMessage[0]);
                     } else {
-                        message[0] = new String(frame.getPayload(), StandardCharsets.UTF_8);
+                        message[0] += new String(frame.getPayload(), StandardCharsets.UTF_8);
                         if (message[0].charAt(message[0].length() - 1) == '\n') {
                             message[0] = message[0].substring(0, message[0].length() - 1);// 去掉最后的\n符
                         }
-                        log.info("输出结果" + message[0]);
+                        log.info("输出结果:{}", message[0]);
                     }
                     super.onNext(frame);
                 }
@@ -391,7 +391,6 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
             };
             // 执行命令
             try {
-                Thread.sleep(100);
                 // 开始计时
                 stopWatch.start();
                 // 执行命令
@@ -399,6 +398,9 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
                 // 结束计时
                 stopWatch.stop();
                 time = stopWatch.getLastTaskTimeMillis();
+                if (size == 1) {
+                    Thread.sleep(1000);
+                }
                 if (time >= TIMEOUT) {
                     log.info("超时{}", time);
                     throw new TimeLimitExceededException(TIME_LIMIT_EXCEEDED.getValue());

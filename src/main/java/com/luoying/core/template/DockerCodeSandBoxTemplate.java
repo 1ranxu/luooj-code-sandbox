@@ -346,7 +346,7 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
         // 4.执行命令并获取结果
         // 例子：docker exec code_sandbox sh -c echo 'input' | runCmd
         List<ExecuteMessage> executeMessageList = new ArrayList<>();
-        int size = inputList.size();
+        Boolean isSleep = false;
         for (String input : inputList) {
             // 为每个输入用例的执行计时
             StopWatch stopWatch = new StopWatch();
@@ -398,8 +398,9 @@ public abstract class DockerCodeSandBoxTemplate implements CodeSandBox {
                 // 结束计时
                 stopWatch.stop();
                 time = stopWatch.getLastTaskTimeMillis();
-                if (size == 1) {
+                if (!isSleep) {
                     Thread.sleep(1000);
+                    isSleep = true;
                 }
                 if (time >= TIMEOUT) {
                     log.info("超时{}", time);
